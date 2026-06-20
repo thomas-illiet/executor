@@ -80,7 +80,7 @@ vm-asset: docker-tooling-build ## Generate Alpine VM assets using the local tool
 		--entrypoint /usr/local/share/executor/scripts/build-alpine.sh \
 		$(TOOLING_IMAGE)
 
-vm-config: ## Create the mounted executor config when it is missing.
+vm-config: ## Create an optional mounted executor config when explicitly requested.
 	@mkdir -p "$(VM_ASSETS_DIR)"
 	@if [ ! -f "$(VM_CONFIG_FILE)" ]; then \
 		{ \
@@ -113,7 +113,7 @@ vm-config: ## Create the mounted executor config when it is missing.
 vm-init: ## Initialize QEMU and rootless Podman inside the running VM container.
 	docker exec -it $(CONTAINER_NAME) executor init
 
-vm-serve: docker-build vm-asset-ready vm-config ## Start the secured idle container used to host the VM.
+vm-serve: docker-build vm-asset-ready ## Start the secured idle container used to host the VM.
 	docker rm -f $(CONTAINER_NAME) >/dev/null 2>&1 || true
 	docker run --name $(CONTAINER_NAME) --rm -it --platform $(DOCKER_RUN_PLATFORM) $(KVM_ARGS) \
 		$(SECURE_RUN_ARGS) \
@@ -129,11 +129,12 @@ vm-exec: ## Run an executor command in the VM container, e.g. make vm-exec CMD="
 vm-shutdown: ## Stop Podman and the VM.
 	docker exec -it $(CONTAINER_NAME) executor shutdown
 
-vm-secure-smoke: docker-build vm-asset-ready vm-config ## Exercise the restricted container workflow end to end.
+vm-secure-smoke: docker-build vm-asset-ready ## Exercise the restricted container workflow end to end.
 	docker rm -f $(CONTAINER_NAME)-smoke >/dev/null 2>&1 || true
 	rm -rf "$(VM_SMOKE_ASSETS_DIR)"
 	mkdir -p "$(VM_SMOKE_ASSETS_DIR)"
-	for asset in alpine-podman.qcow2 vmlinuz-virt initramfs-virt id_ed25519 id_ed25519.pub config.yaml; do cp "$(VM_ASSETS_DIR)/$$asset" "$(VM_SMOKE_ASSETS_DIR)/$$asset"; done
+	for asset in alpine-podman.qcow2 vmlinuz-virt initramfs-virt id_ed25519 id_ed25519.pub; do cp "$(VM_ASSETS_DIR)/$$asset" "$(VM_SMOKE_ASSETS_DIR)/$$asset"; done
+	if [ -f "$(VM_CONFIG_FILE)" ]; then cp "$(VM_CONFIG_FILE)" "$(VM_SMOKE_ASSETS_DIR)/config.yaml"; fi
 	docker run --name $(CONTAINER_NAME)-smoke --rm -d --platform $(DOCKER_RUN_PLATFORM) \
 		$(SECURE_RUN_ARGS) \
 		$(SECURE_TMPFS_ARGS) \

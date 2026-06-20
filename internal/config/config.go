@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -88,7 +87,7 @@ type timeoutsConfig struct {
 	Boot    string `yaml:"boot" mapstructure:"boot"`
 }
 
-// Load builds the app configuration from $HOME/.executor/config.yaml.
+// Load builds the app configuration, using $HOME/.executor/config.yaml only when present.
 func Load(_ string) (Config, error) {
 	workDir, err := os.Getwd()
 	if err != nil {
@@ -100,9 +99,6 @@ func Load(_ string) (Config, error) {
 	}
 	executorDir := filepath.Join(home, ".executor")
 	configPath := filepath.Join(executorDir, configFileName)
-	if err := ensureConfig(configPath, defaultFileConfig()); err != nil {
-		return Config{}, err
-	}
 	return loadFile(workDir, home, executorDir, configPath)
 }
 
@@ -111,7 +107,11 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 	reader.SetConfigFile(configPath)
 	reader.SetConfigType("yaml")
 	setDefaults(reader, defaultFileConfig())
-	if err := reader.ReadInConfig(); err != nil {
+	if _, err := os.Stat(configPath); err == nil {
+		if err := reader.ReadInConfig(); err != nil {
+			return Config{}, err
+		}
+	} else if !os.IsNotExist(err) {
 		return Config{}, err
 	}
 
@@ -174,22 +174,6 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
-}
-
-func ensureConfig(path string, cfg fileConfig) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	content, err := yaml.Marshal(cfg)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, content, 0o644)
 }
 
 func defaultFileConfig() fileConfig {

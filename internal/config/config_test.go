@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestLoadCreatesDefaultConfig(t *testing.T) {
+func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -61,24 +61,8 @@ func TestLoadCreatesDefaultConfig(t *testing.T) {
 	if cfg.AssetMirror != defaultAssetMirror {
 		t.Fatalf("AssetMirror = %q, want default mirror", cfg.AssetMirror)
 	}
-	content, err := os.ReadFile(filepath.Join(executorDir, configFileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(content), "engine:") {
-		t.Fatalf("generated config %q includes removed engine key", string(content))
-	}
-	for _, fragment := range []string{
-		"podman:",
-		"registry_mirror: \"\"",
-		"data_root: /home/coder/.local/share/containers",
-		"disk_image: /home/appuser/.executor/podman-data.qcow2",
-		"disk_size: 10G",
-		"storage_driver: overlay",
-	} {
-		if !strings.Contains(string(content), fragment) {
-			t.Fatalf("generated config %q does not include %q", string(content), fragment)
-		}
+	if _, err := os.Stat(filepath.Join(executorDir, configFileName)); !os.IsNotExist(err) {
+		t.Fatalf("config file stat error = %v, want not exist", err)
 	}
 }
 
@@ -172,16 +156,16 @@ func TestLoadIgnoresExecutorEnvironment(t *testing.T) {
 		t.Fatalf("ExecutorDir = %q, want HOME-derived path", cfg.ExecutorDir)
 	}
 	if cfg.CPUs != defaultCPUs {
-		t.Fatalf("CPUs = %d, want default from config file", cfg.CPUs)
+		t.Fatalf("CPUs = %d, want default", cfg.CPUs)
 	}
 	if cfg.QEMUIOProfile != "max" {
-		t.Fatalf("QEMUIOProfile = %q, want default from config file", cfg.QEMUIOProfile)
+		t.Fatalf("QEMUIOProfile = %q, want default", cfg.QEMUIOProfile)
 	}
 	if cfg.PodmanDataDir != defaultPodmanDataRoot {
-		t.Fatalf("PodmanDataDir = %q, want default from config file", cfg.PodmanDataDir)
+		t.Fatalf("PodmanDataDir = %q, want default", cfg.PodmanDataDir)
 	}
 	if cfg.PodmanRegistryMirror != defaultPodmanRegistryMirror {
-		t.Fatalf("PodmanRegistryMirror = %q, want generated config default", cfg.PodmanRegistryMirror)
+		t.Fatalf("PodmanRegistryMirror = %q, want default", cfg.PodmanRegistryMirror)
 	}
 }
 
