@@ -60,15 +60,15 @@ RUN set -eux; \
 COPY --from=build /out/executor /usr/local/bin/executor
 COPY scripts /usr/local/share/executor/scripts
 
-RUN groupadd -g 1000 appuser \
-    && useradd -u 1000 -g 1000 -d /home/appuser -m -s /bin/sh appuser \
-    && mkdir -p /workspace /home/appuser/.executor \
-    && chown -R 1000:1000 /home/appuser /workspace
+RUN groupadd -g 1000 coder \
+    && useradd -u 1000 -g 1000 -d /home/coder -m -s /bin/sh coder \
+    && mkdir -p /workspace /home/coder/.executor \
+    && chown -R 1000:1000 /home/coder /workspace
 
-ENV HOME=/home/appuser
+ENV HOME=/home/coder
 
 FROM dev-base AS dev
 
-USER appuser:appuser
-WORKDIR /home/appuser
+USER coder:coder
+WORKDIR /home/coder
 CMD ["sleep", "infinity"]

@@ -141,7 +141,7 @@ func TestShutdownStopsPodmanBeforeQEMU(t *testing.T) {
 	}
 	app := App{
 		Config: config.Config{
-			Home:        "/home/appuser",
+			Home:        "/home/coder",
 			QEMUBinary:  "qemu-system-x86_64",
 			QEMUPIDFile: pidfile,
 			SSHSocket:   "/tmp/executorssh.sock",
@@ -318,7 +318,7 @@ func TestProxyUsesCoderHomeWhenHostShareDisabled(t *testing.T) {
 	app := App{
 		Config: config.Config{
 			HostShare: "none",
-			WorkDir:   "/home/appuser",
+			WorkDir:   "/home/coder",
 		},
 	}
 	ssh := vm.SSHClient{

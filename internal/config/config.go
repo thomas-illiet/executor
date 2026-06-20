@@ -14,7 +14,7 @@ const (
 	defaultMemoryMiB            = 4096
 	defaultCPUs                 = 4
 	defaultPodmanDataRoot       = "/home/coder/.local/share/containers"
-	defaultPodmanDiskImage      = "/home/appuser/.executor/podman-data.qcow2"
+	defaultPodmanDiskImage      = "/home/coder/.executor/podman-data.qcow2"
 	defaultPodmanDiskSize       = "10G"
 	defaultPodmanStorageDriver  = "overlay"
 	defaultPodmanRegistryMirror = ""

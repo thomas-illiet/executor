@@ -15,7 +15,7 @@ targets that need a repeatable Linux environment:
 
 The image compiles the `executor` binary and includes the system tools needed to
 generate the Alpine VM assets. Local Compose workflows mount
-`dist/output/` into `/home/appuser/.executor/`, so `executor init` can run
+`dist/output/` into `/home/coder/.executor/`, so `executor init` can run
 against the generated local assets. It is not a production runtime image and is not
 intended to be published as the product artifact.
 
@@ -40,7 +40,7 @@ make docker-shell
 ```
 
 Inside that shell, Compose mounts the Alpine VM assets at
-`/home/appuser/.executor/`, so `executor init` can boot the local VM directly.
+`/home/coder/.executor/`, so `executor init` can boot the local VM directly.
 
 Generate the Alpine VM assets:
 
@@ -57,6 +57,6 @@ These generated files are ignored by git.
 
 The root disk asset is `alpine-podman.qcow2`.
 The Podman data disk is a qcow2 image created with thin provisioning
-(`preallocation=off`) at `/home/appuser/.executor/podman-data.qcow2`;
+(`preallocation=off`) at `/home/coder/.executor/podman-data.qcow2`;
 `podman.disk_size` is the virtual capacity, not the space allocated on the host
 at creation time.

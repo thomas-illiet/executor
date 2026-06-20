@@ -28,8 +28,8 @@ KVM_ARGS ?= $(shell test -e /dev/kvm && echo --device /dev/kvm)
 # Secure defaults used by the VM container targets. They mirror a restricted
 # runtime: non-root user, read-only root filesystem, no extra capabilities, and
 # writable tmpfs mounts for the paths the app needs at runtime.
-SECURE_RUN_ARGS ?= --read-only --user appuser:appuser --cap-drop ALL --security-opt no-new-privileges
-SECURE_TMPFS_ARGS ?= --tmpfs /home/appuser:rw,nosuid,nodev,uid=1000,gid=1000,mode=700,size=8g --tmpfs /tmp:rw,nosuid,nodev,uid=1000,gid=1000,mode=1777,size=1g --tmpfs /run:rw,nosuid,nodev,uid=1000,gid=1000,mode=755,size=64m
+SECURE_RUN_ARGS ?= --read-only --user coder:coder --cap-drop ALL --security-opt no-new-privileges
+SECURE_TMPFS_ARGS ?= --tmpfs /home/coder:rw,nosuid,nodev,uid=1000,gid=1000,mode=700,size=8g --tmpfs /tmp:rw,nosuid,nodev,uid=1000,gid=1000,mode=1777,size=1g --tmpfs /run:rw,nosuid,nodev,uid=1000,gid=1000,mode=755,size=64m
 
 .PHONY: build test tidy clean docker-tooling-build docker-build docker-smoke docker-shell vm-asset-ready vm-asset vm-config vm-init vm-serve vm-exec vm-shutdown vm-secure-smoke help
 
@@ -56,7 +56,7 @@ docker-build: ## Build the local development/tooling image for PLATFORM.
 	docker buildx build --target dev --platform $(PLATFORM) -f $(DOCKERFILE) --load -t $(IMAGE) .
 
 docker-smoke: docker-build vm-asset-ready ## Verify the local tooling image starts executor.
-	$(COMPOSE_ENV) $(COMPOSE) -f $(COMPOSE_FILE) run --rm --no-deps $(COMPOSE_SERVICE) sh -lc 'executor --version && test -s /home/appuser/.executor/alpine-podman.qcow2 && test -s /home/appuser/.executor/vmlinuz-virt && test -s /home/appuser/.executor/initramfs-virt && test -s /home/appuser/.executor/id_ed25519 && test -s /home/appuser/.executor/id_ed25519.pub'
+	$(COMPOSE_ENV) $(COMPOSE) -f $(COMPOSE_FILE) run --rm --no-deps $(COMPOSE_SERVICE) sh -lc 'executor --version && test -s /home/coder/.executor/alpine-podman.qcow2 && test -s /home/coder/.executor/vmlinuz-virt && test -s /home/coder/.executor/initramfs-virt && test -s /home/coder/.executor/id_ed25519 && test -s /home/coder/.executor/id_ed25519.pub'
 
 docker-shell: docker-build vm-asset-ready ## Open an interactive shell with workspace and VM assets mounted.
 	$(COMPOSE_ENV) $(COMPOSE) -f $(COMPOSE_FILE) run --rm --entrypoint /bin/bash $(COMPOSE_SERVICE)
@@ -95,7 +95,7 @@ vm-config: ## Create an optional mounted executor config when explicitly request
 			printf '%s\n' 'podman:'; \
 			printf '%s\n' '  registry_mirror: ""'; \
 			printf '%s\n' '  data_root: /home/coder/.local/share/containers'; \
-			printf '%s\n' '  disk_image: /home/appuser/.executor/podman-data.qcow2'; \
+			printf '%s\n' '  disk_image: /home/coder/.executor/podman-data.qcow2'; \
 			printf '%s\n' '  disk_size: 10G'; \
 			printf '%s\n' '  storage_driver: overlay'; \
 			printf '%s\n' 'timeouts:'; \
@@ -118,7 +118,7 @@ vm-serve: docker-build vm-asset-ready ## Start the secured idle container used t
 		$(SECURE_RUN_ARGS) \
 		$(SECURE_TMPFS_ARGS) \
 		$(CONTAINER_PORTS) \
-		-v "$(abspath $(VM_ASSETS_DIR)):/home/appuser/.executor" \
+		-v "$(abspath $(VM_ASSETS_DIR)):/home/coder/.executor" \
 		-v "$(WORKSPACE):/workspace:ro" \
 		$(IMAGE)
 
@@ -138,7 +138,7 @@ vm-secure-smoke: docker-build vm-asset-ready ## Exercise the restricted containe
 		$(SECURE_RUN_ARGS) \
 		$(SECURE_TMPFS_ARGS) \
 		$(CONTAINER_PORTS) \
-		-v "$(abspath $(VM_SMOKE_ASSETS_DIR)):/home/appuser/.executor" \
+		-v "$(abspath $(VM_SMOKE_ASSETS_DIR)):/home/coder/.executor" \
 		-v "$(WORKSPACE):/workspace:ro" \
 		$(IMAGE)
 	docker exec $(CONTAINER_NAME)-smoke sh -lc 'test "$$(id -u)" = "1000" && touch "$$HOME"/rw-ok && ! touch /usr/local/ro-test'

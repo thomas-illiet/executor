@@ -6,15 +6,15 @@ services:
       dockerfile: ${DOCKERFILE:-Dockerfile.dev}
       target: dev
     platform: ${DOCKER_RUN_PLATFORM:-linux/amd64}
-    user: appuser:appuser
+    user: coder:coder
     cap_drop:
       - ALL
-    working_dir: /home/appuser
+    working_dir: /home/coder
     volumes:
       - type: bind
         source: ${WORKSPACE:-.}
         target: /workspace
       - type: bind
         source: ${VM_ASSETS_DIR:-./dist/output}
-        target: /home/appuser/.executor
+        target: /home/coder/.executor
     command: ["sleep", "infinity"]
