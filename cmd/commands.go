@@ -28,21 +28,6 @@ func newBootCommand(c *cli) *cobra.Command {
 	}
 }
 
-func newDownloadCommand(c *cli) *cobra.Command {
-	var options app.DownloadOptions
-	command := &cobra.Command{
-		Use:   "download",
-		Short: "Download the Alpine VM assets",
-		Args:  cobra.NoArgs,
-		RunE: func(command *cobra.Command, _ []string) error {
-			return c.application.Download(command.Context(), options)
-		},
-	}
-	command.Flags().StringVar(&options.Mirror, "mirror", "", "asset mirror base URL")
-	command.Flags().StringVar(&options.BasicAuth, "basic-auth", "", "basic authentication credentials as user:password")
-	return command
-}
-
 func newShutdownCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "shutdown",

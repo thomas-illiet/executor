@@ -44,7 +44,6 @@ func New(application app.App) *cobra.Command {
 	root.AddCommand(
 		newInitCommand(c),
 		newBootCommand(c),
-		newDownloadCommand(c),
 		newShutdownCommand(c),
 		newResetCommand(c),
 		newTermCommand(c),

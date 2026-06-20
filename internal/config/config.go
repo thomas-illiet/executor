@@ -13,7 +13,6 @@ import (
 const (
 	defaultMemoryMiB            = 4096
 	defaultCPUs                 = 4
-	defaultAssetMirror          = "https://github.com/thomas-illiet/executor/releases/latest/download"
 	defaultPodmanDataRoot       = "/home/coder/.local/share/containers"
 	defaultPodmanDiskImage      = "/home/appuser/.executor/podman-data.qcow2"
 	defaultPodmanDiskSize       = "10G"
@@ -49,19 +48,17 @@ type Config struct {
 	MemoryMiB            int
 	CPUs                 int
 	BootFile             string
-	AssetMirror          string
 	WorkDir              string
 	CommandTimeout       time.Duration
 	BootTimeout          time.Duration
 }
 
 type fileConfig struct {
-	QEMU        qemuConfig     `yaml:"qemu" mapstructure:"qemu"`
-	HostShare   string         `yaml:"host_share" mapstructure:"host_share"`
-	GuestArch   string         `yaml:"guest_arch" mapstructure:"guest_arch"`
-	Podman      podmanConfig   `yaml:"podman" mapstructure:"podman"`
-	AssetMirror string         `yaml:"asset_mirror" mapstructure:"asset_mirror"`
-	Timeouts    timeoutsConfig `yaml:"timeouts" mapstructure:"timeouts"`
+	QEMU      qemuConfig     `yaml:"qemu" mapstructure:"qemu"`
+	HostShare string         `yaml:"host_share" mapstructure:"host_share"`
+	GuestArch string         `yaml:"guest_arch" mapstructure:"guest_arch"`
+	Podman    podmanConfig   `yaml:"podman" mapstructure:"podman"`
+	Timeouts  timeoutsConfig `yaml:"timeouts" mapstructure:"timeouts"`
 }
 
 type qemuConfig struct {
@@ -165,7 +162,6 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 		MemoryMiB:            reader.GetInt("qemu.memory_mib"),
 		CPUs:                 reader.GetInt("qemu.cpus"),
 		BootFile:             filepath.Join(home, ".boot"),
-		AssetMirror:          reader.GetString("asset_mirror"),
 		WorkDir:              workDir,
 		CommandTimeout:       commandTimeout,
 		BootTimeout:          bootTimeout,
@@ -194,7 +190,6 @@ func defaultFileConfig() fileConfig {
 			DiskSize:       defaultPodmanDiskSize,
 			StorageDriver:  defaultPodmanStorageDriver,
 		},
-		AssetMirror: defaultAssetMirror,
 		Timeouts: timeoutsConfig{
 			Command: "2m",
 			Boot:    "8m",
@@ -215,7 +210,6 @@ func setDefaults(reader *viper.Viper, cfg fileConfig) {
 	reader.SetDefault("podman.disk_image", cfg.Podman.DiskImage)
 	reader.SetDefault("podman.disk_size", cfg.Podman.DiskSize)
 	reader.SetDefault("podman.storage_driver", cfg.Podman.StorageDriver)
-	reader.SetDefault("asset_mirror", cfg.AssetMirror)
 	reader.SetDefault("timeouts.command", cfg.Timeouts.Command)
 	reader.SetDefault("timeouts.boot", cfg.Timeouts.Boot)
 }

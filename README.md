@@ -16,7 +16,7 @@ targets that need a repeatable Linux environment:
 The image compiles the `executor` binary and includes the system tools needed to
 generate the Alpine VM assets. Local Compose workflows mount
 `dist/output/` into `/home/appuser/.executor/`, so `executor init` can run
-without `executor download`. It is not a production runtime image and is not
+against the generated local assets. It is not a production runtime image and is not
 intended to be published as the product artifact.
 
 ## Common local workflows

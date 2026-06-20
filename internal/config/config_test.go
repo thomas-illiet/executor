@@ -58,9 +58,6 @@ func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	if cfg.MonitorSocket != filepath.Join(runtimeDir, "monitor.sock") {
 		t.Fatalf("MonitorSocket = %q, want derived socket path", cfg.MonitorSocket)
 	}
-	if cfg.AssetMirror != defaultAssetMirror {
-		t.Fatalf("AssetMirror = %q, want default mirror", cfg.AssetMirror)
-	}
 	if _, err := os.Stat(filepath.Join(executorDir, configFileName)); !os.IsNotExist(err) {
 		t.Fatalf("config file stat error = %v, want not exist", err)
 	}
@@ -90,7 +87,6 @@ podman:
   disk_image: disks/podman-data.qcow2
   disk_size: 25G
   storage_driver: vfs
-asset_mirror: https://example.invalid/assets
 timeouts:
   command: 30s
   boot: 15m

@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/http"
-	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -51,7 +48,7 @@ func TestTopLevelHelpIsPodmanLikeAndLocal(t *testing.T) {
 				"  run         Create and run a new container from an image",
 				"  ps          List containers",
 				"Executor Commands:",
-				"  download",
+				"  init",
 			} {
 				if !strings.Contains(got, fragment) {
 					t.Fatalf("help output %q does not contain %q", got, fragment)
@@ -59,6 +56,9 @@ func TestTopLevelHelpIsPodmanLikeAndLocal(t *testing.T) {
 			}
 			if strings.Contains(got, "  term                 Open an SSH shell in the VM") {
 				t.Fatalf("help output %q contains hidden term command", got)
+			}
+			if strings.Contains(got, "  download") {
+				t.Fatalf("help output %q contains removed download command", got)
 			}
 			for _, hidden := range []string{
 				"  serve                Keep the proxy container running without starting QEMU",
@@ -164,54 +164,6 @@ func TestInternalCommandsRejectUnknownFlags(t *testing.T) {
 				t.Fatalf("strict parsing ran commands: runs=%#v outputCalls=%#v", runner.runs, runner.outputCalls)
 			}
 		})
-	}
-}
-
-// TestDownloadCommandDownloadsAssets verifies Cobra parses download flags and invokes the app path.
-func TestDownloadCommandDownloadsAssets(t *testing.T) {
-	required := map[string][]byte{
-		"/alpine-podman.qcow2": []byte("disk-image"),
-		"/vmlinuz-virt":        []byte("kernel"),
-		"/initramfs-virt":      []byte("initrd"),
-		"/id_ed25519":          []byte("private"),
-		"/id_ed25519.pub":      []byte("public"),
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		username, password, ok := r.BasicAuth()
-		if !ok || username != "cli" || password != "secret" {
-			t.Fatalf("BasicAuth() = %q/%q/%v, want cli/secret/true", username, password, ok)
-		}
-		content, ok := required[r.URL.Path]
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		_, _ = w.Write(content)
-	}))
-	defer server.Close()
-
-	dir := t.TempDir()
-	var out strings.Builder
-	application := app.App{
-		Config: config.Config{
-			AssetMirror: "https://example.invalid/assets",
-			VMImage:     filepath.Join(dir, "alpine-podman.qcow2"),
-			KernelImage: filepath.Join(dir, "vmlinuz-virt"),
-			InitrdImage: filepath.Join(dir, "initramfs-virt"),
-			SSHKeyPath:  filepath.Join(dir, "id_ed25519"),
-		},
-		Runner: &scriptedRunner{outputs: map[string]scriptedOutput{}},
-		Out:    &out,
-		Err:    io.Discard,
-		In:     strings.NewReader(""),
-	}
-
-	err := ExecuteContext(context.Background(), application, []string{"download", "--mirror", server.URL, "--basic-auth", "cli:secret"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "VM assets downloaded.") {
-		t.Fatalf("download output = %q, want success message", out.String())
 	}
 }
 

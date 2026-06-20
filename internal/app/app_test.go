@@ -173,7 +173,7 @@ func TestShutdownStopsPodmanBeforeQEMU(t *testing.T) {
 	}
 }
 
-// TestBootReportsMissingAssets verifies boot fails before QEMU when assets have not been downloaded.
+// TestBootReportsMissingAssets verifies boot fails before QEMU when assets are missing.
 func TestBootReportsMissingAssets(t *testing.T) {
 	dir := t.TempDir()
 	app := App{
@@ -190,8 +190,8 @@ func TestBootReportsMissingAssets(t *testing.T) {
 	}
 
 	err := app.Boot(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "run `executor download` first") {
-		t.Fatalf("Boot() error = %v, want download guidance", err)
+	if err == nil || !strings.Contains(err.Error(), "generate and mount them before boot") {
+		t.Fatalf("Boot() error = %v, want asset guidance", err)
 	}
 }
 
@@ -223,7 +223,7 @@ func TestResetRemovesPodmanDiskImageAndKeepsVMImage(t *testing.T) {
 	}
 
 	err := app.reset(context.Background(), vm.NewManager(cfg, runner), vm.Credentials{}, ResetOptions{Force: true})
-	if err == nil || !strings.Contains(err.Error(), "run `executor download` first") {
+	if err == nil || !strings.Contains(err.Error(), "generate and mount them before boot") {
 		t.Fatalf("reset() error = %v, want missing asset guidance after disk removal", err)
 	}
 	if _, err := os.Stat(vmImage); err != nil {

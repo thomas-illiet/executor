@@ -31,11 +31,6 @@ type ResetOptions struct {
 	Force bool
 }
 
-type DownloadOptions struct {
-	Mirror    string
-	BasicAuth string
-}
-
 // New creates an App with its configuration, runner, and I/O streams.
 func New(cfg config.Config, run system.Runner, out io.Writer, err io.Writer, in io.Reader) App {
 	return App{Config: cfg, Runner: run, Out: out, Err: err, In: in}
@@ -61,22 +56,6 @@ func (a App) Boot(ctx context.Context) error {
 		return err
 	}
 	return a.manager().Start(ctx, false)
-}
-
-// Download retrieves VM assets from the configured mirror.
-func (a App) Download(ctx context.Context, options DownloadOptions) error {
-	mirror := options.Mirror
-	if mirror == "" {
-		mirror = a.Config.AssetMirror
-	}
-	if err := vm.DownloadAssets(ctx, a.assetPaths(), vm.DownloadOptions{
-		Mirror:    mirror,
-		BasicAuth: options.BasicAuth,
-	}); err != nil {
-		return err
-	}
-	fmt.Fprintln(a.Out, "VM assets downloaded.")
-	return nil
 }
 
 // Shutdown stops Podman and the VM.

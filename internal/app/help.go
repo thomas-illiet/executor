@@ -79,7 +79,6 @@ Global Options:
   -v, --version            Print version information and quit
 
 Executor Commands:
-  download             Download the Alpine VM assets
   init                 Boot QEMU and configure %[1]s
   status               Show QEMU, SSH and %[1]s status
   usage                Show QEMU CPU and memory usage

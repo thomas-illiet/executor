@@ -98,7 +98,6 @@ vm-config: ## Create an optional mounted executor config when explicitly request
 			printf '%s\n' '  disk_image: /home/appuser/.executor/podman-data.qcow2'; \
 			printf '%s\n' '  disk_size: 10G'; \
 			printf '%s\n' '  storage_driver: overlay'; \
-			printf '%s\n' 'asset_mirror: https://github.com/thomas-illiet/executor/releases/latest/download'; \
 			printf '%s\n' 'timeouts:'; \
 			printf '%s\n' '  command: 2m'; \
 			printf '%s\n' '  boot: 8m'; \
