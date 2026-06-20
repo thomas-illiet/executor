@@ -40,6 +40,7 @@ func (paths AssetPaths) publicKey() string {
 	return filepath.Join(filepath.Dir(paths.SSHKey), sshPublicKeyAsset)
 }
 
+// missingAssets returns the required VM asset names whose files are absent.
 func missingAssets(paths AssetPaths) []string {
 	required := []struct {
 		name string

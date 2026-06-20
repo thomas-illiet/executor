@@ -113,6 +113,7 @@ func (a App) ExecuteContainer(ctx context.Context, args []string) error {
 	}
 }
 
+// manager builds a VM manager from the App configuration and runner.
 func (a App) manager() vm.Manager {
 	return vm.NewManager(a.Config, a.Runner)
 }

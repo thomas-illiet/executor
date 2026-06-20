@@ -46,6 +46,7 @@ func (m Manager) ConfigurePodman(ctx context.Context, creds Credentials) error {
 	return m.SSH.RunNoTTY(ctx, waitPodman)
 }
 
+// storageConf renders rootless Podman storage configuration.
 func (m Manager) storageConf() string {
 	return fmt.Sprintf(`[storage]
 driver = %s
@@ -57,6 +58,7 @@ mount_program = "/usr/bin/fuse-overlayfs"
 `, tomlString(m.Config.PodmanStorageDriver), tomlString(m.Config.PodmanDataDir), tomlString(PodmanRuntimeDir+"/containers"))
 }
 
+// containersConf renders rootless Podman engine and network configuration.
 func containersConf() string {
 	return `[engine]
 events_logger = "file"
@@ -69,6 +71,7 @@ default_rootless_network_cmd = "slirp4netns"
 `
 }
 
+// registriesConf renders registry search and mirror configuration.
 func (m Manager) registriesConf() string {
 	var out strings.Builder
 	out.WriteString("unqualified-search-registries = [\"docker.io\"]\n")
@@ -85,6 +88,7 @@ func (m Manager) registriesConf() string {
 	return out.String()
 }
 
+// registryAuthJSON renders Podman registry auth configuration from credentials.
 func registryAuthJSON(creds Credentials) (string, error) {
 	auth := creds.RegistryAuth()
 	authConfig := map[string]any{"auths": map[string]any{}}
@@ -101,6 +105,7 @@ func registryAuthJSON(creds Credentials) (string, error) {
 	return string(configJSON), nil
 }
 
+// registryLocation normalizes a registry mirror URL into Podman location syntax.
 func registryLocation(value string) string {
 	value = strings.TrimSpace(value)
 	value = strings.TrimPrefix(value, "https://")
@@ -108,6 +113,7 @@ func registryLocation(value string) string {
 	return strings.TrimRight(value, "/")
 }
 
+// tomlString returns a TOML-safe quoted string.
 func tomlString(value string) string {
 	encoded, err := json.Marshal(value)
 	if err != nil {
@@ -127,6 +133,7 @@ func (m Manager) Sync(ctx context.Context) error {
 	return m.SSH.RunNoTTY(ctx, "sync")
 }
 
+// podmanEnv returns shell assignments required for rootless Podman.
 func podmanEnv() string {
 	return "XDG_RUNTIME_DIR=" + system.Single(PodmanRuntimeDir) +
 		" REGISTRY_AUTH_FILE=" + system.Single(PodmanAuthFile) +
@@ -155,6 +162,7 @@ func (m Manager) WaitForSSH(ctx context.Context, timeout time.Duration) error {
 	return fmt.Errorf("ssh on %s did not become ready within %s", m.SSH.Endpoint(), timeout)
 }
 
+// isSSHAuthenticationFailure reports whether an SSH error should stop polling.
 func isSSHAuthenticationFailure(err error) bool {
 	if err == nil {
 		return false

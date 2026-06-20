@@ -108,6 +108,7 @@ func testConfig() config.Config {
 	}
 }
 
+// TestEnsurePodmanDiskCreatesMissingImage verifies missing Podman disks are created.
 func TestEnsurePodmanDiskCreatesMissingImage(t *testing.T) {
 	dir := t.TempDir()
 	image := filepath.Join(dir, "nested", "podman-data.qcow2")
@@ -133,6 +134,7 @@ func TestEnsurePodmanDiskCreatesMissingImage(t *testing.T) {
 	}
 }
 
+// TestEnsurePodmanDiskKeepsExistingImage verifies existing Podman disks are reused.
 func TestEnsurePodmanDiskKeepsExistingImage(t *testing.T) {
 	dir := t.TempDir()
 	image := filepath.Join(dir, "podman-data.qcow2")
@@ -156,6 +158,7 @@ func TestEnsurePodmanDiskKeepsExistingImage(t *testing.T) {
 	}
 }
 
+// TestStartKeepsSocketsWhenConfiguredQEMUAlreadyRuns verifies Start is idempotent.
 func TestStartKeepsSocketsWhenConfiguredQEMUAlreadyRuns(t *testing.T) {
 	dir, err := os.MkdirTemp("/tmp", "executorstart")
 	if err != nil {
@@ -240,6 +243,7 @@ func TestStopKillsOnlyConfiguredPID(t *testing.T) {
 	}
 }
 
+// TestStopUsesMonitorPowerdownBeforeKill verifies graceful shutdown wins over kill.
 func TestStopUsesMonitorPowerdownBeforeKill(t *testing.T) {
 	dir, err := os.MkdirTemp("/tmp", "executor-qemu-test-*")
 	if err != nil {
@@ -338,11 +342,13 @@ type recordingRunner struct {
 	outputErrorAfter map[string]int
 }
 
+// Run records a command invocation for assertions.
 func (r *recordingRunner) Run(_ context.Context, name string, args ...string) error {
 	r.runs = append(r.runs, commandKey(name, args...))
 	return nil
 }
 
+// Output returns scripted command output and can simulate process exit.
 func (r *recordingRunner) Output(_ context.Context, name string, args ...string) ([]byte, error) {
 	key := commandKey(name, args...)
 	if r.outputCounts == nil {
@@ -355,6 +361,7 @@ func (r *recordingRunner) Output(_ context.Context, name string, args ...string)
 	return r.outputs[key], nil
 }
 
+// commandKey creates a stable map key for a command invocation.
 func commandKey(name string, args ...string) string {
 	values := append([]string{name}, args...)
 	return strings.Join(values, "\x00")
@@ -374,6 +381,7 @@ func TestQEMUUnixHostForwardProbeClassifiesUnsupportedQEMU(t *testing.T) {
 
 type fakeError string
 
+// Error returns the fake QEMU error text.
 func (e fakeError) Error() string {
 	return string(e)
 }

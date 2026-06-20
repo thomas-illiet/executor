@@ -99,6 +99,7 @@ func Load(_ string) (Config, error) {
 	return loadFile(workDir, home, executorDir, configPath)
 }
 
+// loadFile reads configuration from disk and resolves derived runtime paths.
 func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 	reader := viper.New()
 	reader.SetConfigFile(configPath)
@@ -172,6 +173,7 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 	return cfg, nil
 }
 
+// defaultFileConfig returns the default YAML-backed configuration values.
 func defaultFileConfig() fileConfig {
 	return fileConfig{
 		QEMU: qemuConfig{
@@ -197,6 +199,7 @@ func defaultFileConfig() fileConfig {
 	}
 }
 
+// setDefaults registers file configuration defaults with Viper.
 func setDefaults(reader *viper.Viper, cfg fileConfig) {
 	reader.SetDefault("qemu.binary", cfg.QEMU.Binary)
 	reader.SetDefault("qemu.accel", cfg.QEMU.Accel)
@@ -234,6 +237,7 @@ func ioDefaults(profile string) (ioProfileDefaults, error) {
 	}
 }
 
+// parseDuration parses a duration and labels errors with the config key.
 func parseDuration(key, value string) (time.Duration, error) {
 	parsed, err := time.ParseDuration(value)
 	if err != nil {
@@ -242,6 +246,7 @@ func parseDuration(key, value string) (time.Duration, error) {
 	return parsed, nil
 }
 
+// resolveConfigPath resolves relative path-like config values under baseDir.
 func resolveConfigPath(baseDir, value string) string {
 	if value == "" || filepath.IsAbs(value) || !strings.ContainsAny(value, `/\`) {
 		return value
@@ -249,6 +254,7 @@ func resolveConfigPath(baseDir, value string) string {
 	return filepath.Join(baseDir, value)
 }
 
+// validate checks that required configuration values are present and supported.
 func validate(cfg Config) error {
 	if cfg.MemoryMiB <= 0 {
 		return fmt.Errorf("qemu.memory_mib must be positive")

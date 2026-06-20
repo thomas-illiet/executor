@@ -57,6 +57,7 @@ func New(application app.App) *cobra.Command {
 	return root
 }
 
+// runRoot handles top-level help/version locally and proxies everything else.
 func (c *cli) runRoot(command *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		c.application.PrintHelp()
@@ -74,6 +75,7 @@ func (c *cli) runRoot(command *cobra.Command, args []string) error {
 	}
 }
 
+// containerCommandArgs prefixes proxied arguments with a Podman subcommand name.
 func containerCommandArgs(name string, args []string) []string {
 	values := make([]string, 0, len(args)+1)
 	values = append(values, name)

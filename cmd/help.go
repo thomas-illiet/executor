@@ -13,6 +13,7 @@ var internalHelpTargets = map[string]struct{}{
 	"usage":     {},
 }
 
+// newHelpCommand builds help handling for local and proxied commands.
 func newHelpCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:                "help [command]",

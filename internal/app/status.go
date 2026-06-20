@@ -139,6 +139,7 @@ type qemuUsageStats struct {
 	Command    string
 }
 
+// firstQEMUProcess returns the first non-defunct QEMU process from pgrep output.
 func firstQEMUProcess(output []byte) (qemuProcess, bool) {
 	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
 		line = strings.TrimSpace(line)
@@ -157,6 +158,7 @@ func firstQEMUProcess(output []byte) (qemuProcess, bool) {
 	return qemuProcess{}, false
 }
 
+// parseQEMUUsage parses ps output into QEMU usage statistics.
 func parseQEMUUsage(output []byte) (qemuUsageStats, error) {
 	fields := strings.Fields(strings.TrimSpace(string(output)))
 	if len(fields) < 6 {
@@ -180,6 +182,7 @@ func parseQEMUUsage(output []byte) (qemuUsageStats, error) {
 	}, nil
 }
 
+// formatKiBAsMiB formats a KiB value as MiB with one decimal place.
 func formatKiBAsMiB(kib int64) string {
 	return fmt.Sprintf("%.1f", float64(kib)/1024)
 }

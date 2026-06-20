@@ -10,6 +10,7 @@ import (
 	"executor/internal/config"
 )
 
+// TestConfigurePodmanWritesRootlessConfig verifies rootless Podman files and auth.
 func TestConfigurePodmanWritesRootlessConfig(t *testing.T) {
 	runner := &recordingRunner{}
 	manager := Manager{
@@ -97,6 +98,7 @@ func TestConfigurePodmanWritesRootlessConfig(t *testing.T) {
 	}
 }
 
+// TestWaitForSSHReturnsAuthenticationFailureImmediately verifies auth errors fail fast.
 func TestWaitForSSHReturnsAuthenticationFailureImmediately(t *testing.T) {
 	runner := &authFailureRunner{}
 	manager := Manager{
@@ -128,6 +130,7 @@ func TestWaitForSSHReturnsAuthenticationFailureImmediately(t *testing.T) {
 	}
 }
 
+// runContaining returns the first recorded command containing a fragment.
 func runContaining(runs []string, fragment string) string {
 	for _, run := range runs {
 		if strings.Contains(run, fragment) {
@@ -141,10 +144,12 @@ type authFailureRunner struct {
 	outputCalls int
 }
 
+// Run satisfies system.Runner for tests that only exercise Output.
 func (r *authFailureRunner) Run(_ context.Context, _ string, _ ...string) error {
 	return nil
 }
 
+// Output returns an SSH authentication failure and counts attempts.
 func (r *authFailureRunner) Output(_ context.Context, _ string, _ ...string) ([]byte, error) {
 	r.outputCalls++
 	return nil, errors.New("ssh failed: exit status 255: coder@localhost: Permission denied (publickey,keyboard-interactive).")

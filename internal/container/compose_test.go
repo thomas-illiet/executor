@@ -108,6 +108,7 @@ services:
 	}
 }
 
+// writeCompose writes a temporary compose file for parser tests.
 func writeCompose(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()

@@ -167,6 +167,7 @@ func TestInternalCommandsRejectUnknownFlags(t *testing.T) {
 	}
 }
 
+// newTestApp builds an App with test-safe defaults and injected streams.
 func newTestApp(runner *scriptedRunner, out io.Writer, errOut io.Writer) app.App {
 	return app.App{
 		Config: config.Config{
@@ -212,6 +213,7 @@ func (r *scriptedRunner) Output(_ context.Context, name string, args ...string) 
 	return output.output, output.err
 }
 
+// commandKey creates a stable map key for a command invocation.
 func commandKey(name string, args ...string) string {
 	values := append([]string{name}, args...)
 	return strings.Join(values, "\x00")

@@ -81,6 +81,7 @@ func (a App) ensureVMAssets() error {
 	return vm.EnsureAssets(a.assetPaths())
 }
 
+// assetPaths returns the configured local paths for required VM assets.
 func (a App) assetPaths() vm.AssetPaths {
 	return vm.AssetPaths{
 		Image:  a.Config.VMImage,

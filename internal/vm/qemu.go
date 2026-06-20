@@ -62,6 +62,7 @@ func (m Manager) qemuArgsWithShare(daemonize bool, share string) []string {
 	return args
 }
 
+// hostSharePath resolves the host path exposed through the configured share mode.
 func (m Manager) hostSharePath(share string) string {
 	if share != "9p" {
 		return ""
@@ -72,6 +73,7 @@ func (m Manager) hostSharePath(share string) string {
 	return m.Config.Home
 }
 
+// kernelAppend builds the guest kernel command line.
 func (m Manager) kernelAppend(share string) string {
 	values := []string{"root=/dev/vda", "rootfstype=ext4", "rw", "console=ttyS0", "modules=virtio_blk,virtio_net,ext4,fuse", "quiet"}
 	if sharePath := m.hostSharePath(share); sharePath != "" {
@@ -80,6 +82,7 @@ func (m Manager) kernelAppend(share string) string {
 	return strings.Join(values, " ")
 }
 
+// prepareSockets creates runtime socket directories and removes stale sockets.
 func (m Manager) prepareSockets() error {
 	if m.Config.SSHSocket == "" {
 		return fmt.Errorf("ssh socket path must be set; SSH over TCP fallback is not supported")
@@ -114,14 +117,17 @@ func (m Manager) prepareSockets() error {
 	return nil
 }
 
+// netdevArg returns the QEMU user-network argument with SSH socket forwarding.
 func (m Manager) netdevArg() string {
 	return fmt.Sprintf("user,id=mynet0,hostfwd=unix:%s-:22", m.Config.SSHSocket)
 }
 
+// monitorArg returns the QEMU monitor argument for the configured socket.
 func (m Manager) monitorArg() string {
 	return fmt.Sprintf("unix:%s,server,nowait", m.Config.MonitorSocket)
 }
 
+// readQEMUPID reads and validates the configured QEMU pidfile.
 func (m Manager) readQEMUPID() (string, error) {
 	content, err := os.ReadFile(m.Config.QEMUPIDFile)
 	if err != nil {
@@ -137,6 +143,7 @@ func (m Manager) readQEMUPID() (string, error) {
 	return pid, nil
 }
 
+// validateQEMUProcess verifies a PID belongs to the configured QEMU runtime.
 func (m Manager) validateQEMUProcess(ctx context.Context, pid string) error {
 	output, err := m.Runner.Output(ctx, "ps", "-p", pid, "-o", "args=")
 	if err != nil {
@@ -153,6 +160,7 @@ func (m Manager) validateQEMUProcess(ctx context.Context, pid string) error {
 	return nil
 }
 
+// probeUnixHostForward checks whether QEMU supports SSH forwarding over Unix sockets.
 func (m Manager) probeUnixHostForward(ctx context.Context) error {
 	probeDir, err := os.MkdirTemp("", "executorqemuprobe")
 	if err != nil {
@@ -179,6 +187,7 @@ func (m Manager) probeUnixHostForward(ctx context.Context) error {
 	return nil
 }
 
+// qemuUnixHostForwardProbeArgs builds the minimal QEMU probe invocation.
 func qemuUnixHostForwardProbeArgs(socketPath string, pidPath string) []string {
 	return []string{
 		"-nodefaults",
@@ -190,6 +199,7 @@ func qemuUnixHostForwardProbeArgs(socketPath string, pidPath string) []string {
 	}
 }
 
+// qemuUnixHostForwardProbeError classifies QEMU host-forwarding probe failures.
 func qemuUnixHostForwardProbeError(err error) error {
 	message := err.Error()
 	if strings.Contains(message, "Bad protocol name") || strings.Contains(message, "Invalid host forwarding rule") {

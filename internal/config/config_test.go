@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// TestLoadUsesDefaultsWithoutConfig verifies absent config files use derived defaults.
 func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -63,6 +64,7 @@ func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	}
 }
 
+// TestLoadReadsConfigFile verifies user config overrides defaults.
 func TestLoadReadsConfigFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -135,6 +137,7 @@ timeouts:
 	}
 }
 
+// TestLoadIgnoresExecutorEnvironment verifies legacy env overrides are ignored.
 func TestLoadIgnoresExecutorEnvironment(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -165,6 +168,7 @@ func TestLoadIgnoresExecutorEnvironment(t *testing.T) {
 	}
 }
 
+// TestLoadIgnoresLegacyEngineAndDockerKeys verifies only Podman config is honored.
 func TestLoadIgnoresLegacyEngineAndDockerKeys(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -203,6 +207,7 @@ podman:
 	}
 }
 
+// TestLoadRejectsInvalidConfig verifies invalid values fail with config key context.
 func TestLoadRejectsInvalidConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

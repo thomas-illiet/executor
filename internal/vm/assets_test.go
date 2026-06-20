@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestEnsureAssetsAcceptsPresentFiles verifies complete asset sets pass validation.
 func TestEnsureAssetsAcceptsPresentFiles(t *testing.T) {
 	dir := t.TempDir()
 	paths := AssetPaths{

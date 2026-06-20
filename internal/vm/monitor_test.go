@@ -32,6 +32,7 @@ func TestExecuteUsesUnixSocket(t *testing.T) {
 	}
 }
 
+// serveOneMonitorCommand accepts one monitor command and returns a prompt.
 func serveOneMonitorCommand(t *testing.T, listener net.Listener, want string) {
 	t.Helper()
 	errs := make(chan error, 1)
@@ -66,6 +67,7 @@ type unexpectedCommandError struct {
 	want string
 }
 
+// Error formats the monitor command mismatch for test failures.
 func (e *unexpectedCommandError) Error() string {
 	return "monitor command = " + e.got + ", want " + e.want
 }

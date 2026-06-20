@@ -85,6 +85,7 @@ func (m Manager) Stop(ctx context.Context) error {
 	return nil
 }
 
+// isRunning reports whether the configured QEMU process is already active.
 func (m Manager) isRunning(ctx context.Context) bool {
 	pid, err := m.readQEMUPID()
 	if err != nil {
@@ -93,6 +94,7 @@ func (m Manager) isRunning(ctx context.Context) bool {
 	return m.validateQEMUProcess(ctx, pid) == nil
 }
 
+// ensurePodmanDisk creates the dedicated Podman disk image when configured.
 func (m Manager) ensurePodmanDisk(ctx context.Context) error {
 	if strings.TrimSpace(m.Config.PodmanDiskImage) == "" {
 		return nil
@@ -111,6 +113,7 @@ func (m Manager) ensurePodmanDisk(ctx context.Context) error {
 	return m.Runner.Run(ctx, "qemu-img", "create", "-q", "-f", "qcow2", "-o", "preallocation=off", m.Config.PodmanDiskImage, m.Config.PodmanDiskSize)
 }
 
+// powerdown asks QEMU to exit through the monitor and waits for the PID to stop.
 func (m Manager) powerdown(ctx context.Context, pid string) error {
 	if _, err := m.Monitor.Execute(ctx, "system_powerdown"); err != nil {
 		return err

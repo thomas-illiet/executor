@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestBuildAlpineUnlocksCoderForPublicKeySSH verifies the image script keeps SSH usable.
 func TestBuildAlpineUnlocksCoderForPublicKeySSH(t *testing.T) {
 	scriptPath := filepath.Join("..", "..", "scripts", "build-alpine.sh")
 	content, err := os.ReadFile(scriptPath)

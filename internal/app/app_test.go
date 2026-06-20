@@ -195,6 +195,7 @@ func TestBootReportsMissingAssets(t *testing.T) {
 	}
 }
 
+// TestResetRemovesPodmanDiskImageAndKeepsVMImage verifies reset preserves the VM base image.
 func TestResetRemovesPodmanDiskImageAndKeepsVMImage(t *testing.T) {
 	dir := t.TempDir()
 	vmImage := dir + "/alpine-container.qcow2"
@@ -313,6 +314,7 @@ func TestUsageErrorsWhenQEMUIsStopped(t *testing.T) {
 	}
 }
 
+// TestProxyUsesCoderHomeWhenHostShareDisabled verifies proxy commands avoid disabled shares.
 func TestProxyUsesCoderHomeWhenHostShareDisabled(t *testing.T) {
 	runner := &recordingRunner{}
 	app := App{
@@ -349,6 +351,7 @@ type recordedRun struct {
 	args []string
 }
 
+// recordedRunIndex returns the index of an exact recorded command match.
 func recordedRunIndex(runs []recordedRun, name string, args ...string) int {
 	for i, run := range runs {
 		if run.name != name || len(run.args) != len(args) {
@@ -368,6 +371,7 @@ func recordedRunIndex(runs []recordedRun, name string, args ...string) int {
 	return -1
 }
 
+// recordedRunIndexContaining returns the first command containing a fragment.
 func recordedRunIndexContaining(runs []recordedRun, fragment string) int {
 	for i, run := range runs {
 		if strings.Contains(run.name, fragment) {
@@ -424,6 +428,7 @@ func (r *scriptedRunner) Output(_ context.Context, name string, args ...string) 
 	return output.output, output.err
 }
 
+// commandKey creates a stable map key for a command invocation.
 func commandKey(name string, args ...string) string {
 	values := append([]string{name}, args...)
 	return strings.Join(values, "\x00")

@@ -117,6 +117,7 @@ func (r *sshRecordingRunner) Output(_ context.Context, _ string, _ ...string) ([
 	return nil, nil
 }
 
+// containsArgPair reports whether adjacent SSH arguments match a key and value.
 func containsArgPair(args []string, key string, value string) bool {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == key && args[i+1] == value {

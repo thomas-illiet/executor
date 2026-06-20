@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newInitCommand builds the command that boots and configures the VM.
 func newInitCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
@@ -17,6 +18,7 @@ func newInitCommand(c *cli) *cobra.Command {
 	}
 }
 
+// newBootCommand builds the command that starts QEMU without setup.
 func newBootCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "boot",
@@ -28,6 +30,7 @@ func newBootCommand(c *cli) *cobra.Command {
 	}
 }
 
+// newShutdownCommand builds the command that stops Podman and QEMU.
 func newShutdownCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "shutdown",
@@ -39,6 +42,7 @@ func newShutdownCommand(c *cli) *cobra.Command {
 	}
 }
 
+// newResetCommand builds the command that clears Podman state and reinitializes.
 func newResetCommand(c *cli) *cobra.Command {
 	var options app.ResetOptions
 	command := &cobra.Command{
@@ -53,6 +57,7 @@ func newResetCommand(c *cli) *cobra.Command {
 	return command
 }
 
+// newTermCommand builds the hidden command that opens a VM shell.
 func newTermCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:    "term",
@@ -65,6 +70,7 @@ func newTermCommand(c *cli) *cobra.Command {
 	}
 }
 
+// newAddCertsCommand builds the command that installs CA certificates in the VM.
 func newAddCertsCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "add-certs <cert-directory>",
@@ -76,6 +82,7 @@ func newAddCertsCommand(c *cli) *cobra.Command {
 	}
 }
 
+// newStatusCommand builds the command that reports runtime health.
 func newStatusCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
@@ -87,6 +94,7 @@ func newStatusCommand(c *cli) *cobra.Command {
 	}
 }
 
+// newUsageCommand builds the command that reports QEMU resource usage.
 func newUsageCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "usage",
@@ -98,6 +106,7 @@ func newUsageCommand(c *cli) *cobra.Command {
 	}
 }
 
+// newRunCommand builds the Podman run proxy command.
 func newRunCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:                "run",
@@ -110,6 +119,7 @@ func newRunCommand(c *cli) *cobra.Command {
 	}
 }
 
+// newComposeCommand builds the Podman compose proxy command.
 func newComposeCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:                "compose",
@@ -122,6 +132,7 @@ func newComposeCommand(c *cli) *cobra.Command {
 	}
 }
 
+// newUpCommand builds the shorthand command for podman compose up.
 func newUpCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:                "up",

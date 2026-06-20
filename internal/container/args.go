@@ -61,6 +61,7 @@ func DetachedRunCommandWithPrefix(podmanCommand []string, args []string) (string
 		"exit \"$status\"", true
 }
 
+// commandName returns the final executable component of a command prefix.
 func commandName(command []string) string {
 	if len(command) == 0 {
 		return ""
