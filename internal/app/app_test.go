@@ -107,7 +107,7 @@ func TestRewriteRunPublishArgsAllocatesContainerOnlyPublish(t *testing.T) {
 
 // TestDetachedRunCommandUsesCreateAndStart verifies detached run command rewriting.
 func TestDetachedRunCommandUsesCreateAndStart(t *testing.T) {
-	got, ok := container.DetachedRunCommand([]string{"run", "-d", "--name", "web", "-p", "18080:80", "nginx"})
+	got, ok := container.DetachedRunCommandWithPrefix([]string{"podman"}, []string{"run", "-d", "--name", "web", "-p", "18080:80", "nginx"})
 	if !ok {
 		t.Fatal("container.DetachedRunCommand() did not match detached run")
 	}

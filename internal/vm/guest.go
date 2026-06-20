@@ -18,21 +18,6 @@ const (
 
 const podmanConfigDir = "/home/coder/.config/containers"
 
-// MountHost is a no-op because root-only host-share setup runs during VM boot.
-func (m Manager) MountHost(ctx context.Context) error {
-	return nil
-}
-
-// MountPodmanData is a no-op because root-only disk setup runs during VM boot.
-func (m Manager) MountPodmanData(ctx context.Context) error {
-	return nil
-}
-
-// UnmountPodmanData is a no-op because the VM owns the root-only mount lifecycle.
-func (m Manager) UnmountPodmanData(ctx context.Context) error {
-	return nil
-}
-
 // ConfigurePodman writes rootless Podman configuration and verifies Podman in the VM.
 func (m Manager) ConfigurePodman(ctx context.Context, creds Credentials) error {
 	if err := m.SSH.RunNoTTY(ctx, "mkdir -p "+system.Single(podmanConfigDir)+" "+system.Single(m.Config.PodmanDataDir)); err != nil {

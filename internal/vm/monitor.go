@@ -53,31 +53,7 @@ func (c MonitorClient) Execute(ctx context.Context, command string) (string, err
 	}
 }
 
-// AddHostForward adds a QEMU user-network port forward.
-func (c MonitorClient) AddHostForward(ctx context.Context, ip string, hostPort, guestPort int) error {
-	target := fmt.Sprintf("tcp:%s:%d-:%d", ip, hostPort, guestPort)
-	if ip == "" {
-		target = fmt.Sprintf("tcp::%d-:%d", hostPort, guestPort)
-	}
-	_, err := c.Execute(ctx, "hostfwd_add "+c.netdev()+" "+target)
-	return err
-}
-
-// RemoveHostForward removes a QEMU user-network port forward.
-func (c MonitorClient) RemoveHostForward(ctx context.Context, hostPort int) error {
-	_, err := c.Execute(ctx, fmt.Sprintf("hostfwd_remove %s tcp::%d", c.netdev(), hostPort))
-	return err
-}
-
 // Endpoint returns a display label for the monitor transport.
 func (c MonitorClient) Endpoint() string {
 	return c.SocketPath
-}
-
-// netdev returns the configured QEMU network device name.
-func (c MonitorClient) netdev() string {
-	if c.Netdev != "" {
-		return c.Netdev
-	}
-	return "mynet0"
 }

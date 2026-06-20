@@ -4,7 +4,7 @@ import "testing"
 
 // TestCommandAddsPodmanBuildLayersFlag verifies Podman build disables layers.
 func TestCommandAddsPodmanBuildLayersFlag(t *testing.T) {
-	got := Command([]string{"build", "."})
+	got := CommandWithPrefix([]string{"podman"}, []string{"build", "."})
 	if got[len(got)-1] != "--layers=false" {
 		t.Fatalf("Command() = %#v", got)
 	}

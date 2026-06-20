@@ -18,11 +18,6 @@ type SSHClient struct {
 	Runner     system.Runner
 }
 
-// Run executes a remote command with a TTY.
-func (c SSHClient) Run(ctx context.Context, command string) error {
-	return c.RunWithTTY(ctx, command, true)
-}
-
 // RunNoTTY executes a remote command without a TTY.
 func (c SSHClient) RunNoTTY(ctx context.Context, command string) error {
 	return c.RunWithTTY(ctx, command, false)

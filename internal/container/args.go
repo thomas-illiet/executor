@@ -7,11 +7,6 @@ import (
 	"executor/internal/system"
 )
 
-// Command builds the Podman command to run in the VM.
-func Command(args []string) []string {
-	return CommandWithPrefix([]string{"podman"}, args)
-}
-
 // CommandWithPrefix builds the Podman command with an optional environment prefix.
 func CommandWithPrefix(podmanCommand []string, args []string) []string {
 	command := make([]string, 0, len(podmanCommand)+len(args)+1)
@@ -46,11 +41,6 @@ func WantsTTY(args []string) bool {
 		}
 	}
 	return false
-}
-
-// DetachedRunCommand builds a safer command for detached Podman container runs.
-func DetachedRunCommand(args []string) (string, bool) {
-	return DetachedRunCommandWithPrefix([]string{"podman"}, args)
 }
 
 // DetachedRunCommandWithPrefix builds a safer command for detached Podman runs.

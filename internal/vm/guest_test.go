@@ -97,30 +97,6 @@ func TestConfigurePodmanWritesRootlessConfig(t *testing.T) {
 	}
 }
 
-func TestMountPodmanDataIsBootTimeNoop(t *testing.T) {
-	runner := &recordingRunner{}
-	manager := Manager{
-		Config: config.Config{
-			PodmanDataDir:   "/home/coder/.local/share/containers",
-			PodmanDiskImage: "/home/appuser/.executor/podman-data.qcow2",
-			SSHSocket:       "/tmp/executorssh.sock",
-			SSHUser:         "coder",
-		},
-		SSH: SSHClient{
-			SocketPath: "/tmp/executorssh.sock",
-			User:       "coder",
-			Runner:     runner,
-		},
-	}
-
-	if err := manager.MountPodmanData(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if len(runner.runs) != 0 {
-		t.Fatalf("runs = %#v, want boot-time mount handled without SSH", runner.runs)
-	}
-}
-
 func TestWaitForSSHReturnsAuthenticationFailureImmediately(t *testing.T) {
 	runner := &authFailureRunner{}
 	manager := Manager{

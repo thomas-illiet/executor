@@ -106,11 +106,6 @@ func Load(_ string) (Config, error) {
 	return loadFile(workDir, home, executorDir, configPath)
 }
 
-// FromEnvironment loads $HOME/.executor/config.yaml; EXECUTOR_* values are ignored.
-func FromEnvironment(argv0 string) (Config, error) {
-	return Load(argv0)
-}
-
 func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 	reader := viper.New()
 	reader.SetConfigFile(configPath)
