@@ -1,0 +1,74 @@
+# syntax=docker/dockerfile:1.7
+#
+# Local development/tooling image only.
+# Used by:
+# - make docker-build
+# - make docker-shell
+# - make vm-asset
+#
+# This image builds the executor binary and provides the tools needed to
+# generate the Alpine VM assets. Local Compose workflows mount those assets into
+# the container for executor init. It is not the product runtime image and
+# should not be treated as a production/distribution artifact.
+
+ARG GO_VERSION=1.23
+
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS build
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o /out/executor .
+
+# Forky carries QEMU 11.x with libslirp support for hostfwd=unix.
+FROM --platform=linux/amd64 debian:forky-slim AS dev-base
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        cloud-image-utils \
+        curl \
+        e2fsprogs \
+        genisoimage \
+        gzip \
+        iproute2 \
+        netcat-openbsd \
+        openssh-client \
+        procps \
+        qemu-system-x86 \
+        qemu-utils \
+        tar \
+    && rm -f /usr/lib/qemu/virtiofsd \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    probe_dir="$(mktemp -d)"; \
+    qemu-system-x86_64 \
+        -nodefaults \
+        -display none \
+        -S \
+        -netdev "user,id=executorprobe,hostfwd=unix:${probe_dir}/ssh.sock-:22" \
+        -daemonize \
+        -pidfile "${probe_dir}/qemu.pid"; \
+    kill "$(cat "${probe_dir}/qemu.pid")"; \
+    rm -rf "${probe_dir}"
+
+COPY --from=build /out/executor /usr/local/bin/executor
+COPY scripts /usr/local/share/executor/scripts
+
+RUN groupadd -g 1000 appuser \
+    && useradd -u 1000 -g 1000 -d /home/appuser -m -s /bin/sh appuser \
+    && mkdir -p /workspace /home/appuser/.executor \
+    && chown -R 1000:1000 /home/appuser /workspace
+
+ENV HOME=/home/appuser
+
+FROM dev-base AS dev
+
+USER appuser:appuser
+WORKDIR /home/appuser
+CMD ["sleep", "infinity"]

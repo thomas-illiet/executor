@@ -1,0 +1,7 @@
+bin/
+dist/
+.local/
+.executor/
+__pycache__/
+*.pyc
+.DS_Store

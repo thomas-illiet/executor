@@ -1,0 +1,20 @@
+services:
+  executor-dev:
+    image: ${IMAGE:-qemu-podman-proxy:dev}
+    build:
+      context: .
+      dockerfile: ${DOCKERFILE:-Dockerfile.dev}
+      target: dev
+    platform: ${DOCKER_RUN_PLATFORM:-linux/amd64}
+    user: appuser:appuser
+    cap_drop:
+      - ALL
+    working_dir: /home/appuser
+    volumes:
+      - type: bind
+        source: ${WORKSPACE:-.}
+        target: /workspace
+      - type: bind
+        source: ${VM_ASSETS_DIR:-./dist/output}
+        target: /home/appuser/.executor
+    command: ["sleep", "infinity"]
