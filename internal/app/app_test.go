@@ -199,7 +199,7 @@ func TestBootReportsMissingAssets(t *testing.T) {
 func TestResetRemovesPodmanDiskImageAndKeepsVMImage(t *testing.T) {
 	dir := t.TempDir()
 	vmImage := dir + "/alpine-container.qcow2"
-	podmanDisk := dir + "/podman-data.qcow2"
+	podmanDisk := dir + "/data.qcow2"
 	pidfile := dir + "/missing-qemu.pid"
 	for _, path := range []string{vmImage, podmanDisk} {
 		if err := os.WriteFile(path, []byte("disk"), 0o644); err != nil {

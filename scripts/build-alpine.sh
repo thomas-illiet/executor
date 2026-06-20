@@ -32,8 +32,8 @@ fi
 
 rootfs_tar="${work_dir}/${minirootfs_name}"
 rootfs_dir="${work_dir}/rootfs"
-raw_image="${work_dir}/alpine-podman.raw"
-qcow2_image="${assets_dir}/alpine-podman.qcow2"
+raw_image="${work_dir}/system.raw"
+qcow2_image="${assets_dir}/system.qcow2"
 ssh_key="${work_dir}/id_ed25519"
 
 if [ ! -f "${rootfs_tar}" ]; then
@@ -187,7 +187,7 @@ chroot "${rootfs_dir}" /bin/sh -c 'rc-update add sshd default'
 chroot "${rootfs_dir}" /usr/bin/ssh-keygen -A
 
 echo "Creating ext4 root disk"
-rm -f "${raw_image}" "${qcow2_image}" "${assets_dir}/alpine-podman.raw"
+rm -f "${raw_image}" "${qcow2_image}" "${assets_dir}/system.raw"
 truncate -s "${rootfs_size}" "${raw_image}"
 mke2fs -q -F -t ext4 -O '^metadata_csum_seed,^orphan_file' -L rootfs -d "${rootfs_dir}" "${raw_image}"
 qemu-img convert -f raw -O qcow2 -c -o compat=1.1 "${raw_image}" "${qcow2_image}"

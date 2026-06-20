@@ -15,7 +15,7 @@ CONTAINER_NAME ?= qemu-podman-proxy
 VM_ASSETS_DIR ?= dist/output
 VM_SMOKE_ASSETS_DIR ?= .local/vm-secure-smoke-assets
 VM_CONFIG_FILE ?= $(VM_ASSETS_DIR)/config.yaml
-VM_ASSET_FILES := $(VM_ASSETS_DIR)/alpine-podman.qcow2 $(VM_ASSETS_DIR)/vmlinuz-virt $(VM_ASSETS_DIR)/initramfs-virt $(VM_ASSETS_DIR)/id_ed25519 $(VM_ASSETS_DIR)/id_ed25519.pub
+VM_ASSET_FILES := $(VM_ASSETS_DIR)/system.qcow2 $(VM_ASSETS_DIR)/vmlinuz-virt $(VM_ASSETS_DIR)/initramfs-virt $(VM_ASSETS_DIR)/id_ed25519 $(VM_ASSETS_DIR)/id_ed25519.pub
 
 # Host container run commands are intentionally pinned to x64. The local tooling
 # image carries amd64 QEMU packages and is expected to behave the same on arm64 hosts.
@@ -56,7 +56,7 @@ docker-build: ## Build the local development/tooling image for PLATFORM.
 	docker buildx build --target dev --platform $(PLATFORM) -f $(DOCKERFILE) --load -t $(IMAGE) .
 
 docker-smoke: docker-build vm-asset-ready ## Verify the local tooling image starts executor.
-	$(COMPOSE_ENV) $(COMPOSE) -f $(COMPOSE_FILE) run --rm --no-deps $(COMPOSE_SERVICE) sh -lc 'executor --version && test -s /home/coder/.executor/alpine-podman.qcow2 && test -s /home/coder/.executor/vmlinuz-virt && test -s /home/coder/.executor/initramfs-virt && test -s /home/coder/.executor/id_ed25519 && test -s /home/coder/.executor/id_ed25519.pub'
+	$(COMPOSE_ENV) $(COMPOSE) -f $(COMPOSE_FILE) run --rm --no-deps $(COMPOSE_SERVICE) sh -lc 'executor --version && test -s /home/coder/.executor/system.qcow2 && test -s /home/coder/.executor/vmlinuz-virt && test -s /home/coder/.executor/initramfs-virt && test -s /home/coder/.executor/id_ed25519 && test -s /home/coder/.executor/id_ed25519.pub'
 
 docker-shell: docker-build vm-asset-ready ## Open an interactive shell with workspace and VM assets mounted.
 	$(COMPOSE_ENV) $(COMPOSE) -f $(COMPOSE_FILE) run --rm --entrypoint /bin/bash $(COMPOSE_SERVICE)
@@ -95,7 +95,7 @@ vm-config: ## Create an optional mounted executor config when explicitly request
 			printf '%s\n' 'podman:'; \
 			printf '%s\n' '  registry_mirror: ""'; \
 			printf '%s\n' '  data_root: /home/coder/.local/share/containers'; \
-			printf '%s\n' '  disk_image: /home/coder/.executor/podman-data.qcow2'; \
+			printf '%s\n' '  disk_image: /home/coder/.executor/data.qcow2'; \
 			printf '%s\n' '  disk_size: 10G'; \
 			printf '%s\n' '  storage_driver: overlay'; \
 			printf '%s\n' 'timeouts:'; \
@@ -132,7 +132,7 @@ vm-secure-smoke: docker-build vm-asset-ready ## Exercise the restricted containe
 	docker rm -f $(CONTAINER_NAME)-smoke >/dev/null 2>&1 || true
 	rm -rf "$(VM_SMOKE_ASSETS_DIR)"
 	mkdir -p "$(VM_SMOKE_ASSETS_DIR)"
-	for asset in alpine-podman.qcow2 vmlinuz-virt initramfs-virt id_ed25519 id_ed25519.pub; do cp "$(VM_ASSETS_DIR)/$$asset" "$(VM_SMOKE_ASSETS_DIR)/$$asset"; done
+	for asset in system.qcow2 vmlinuz-virt initramfs-virt id_ed25519 id_ed25519.pub; do cp "$(VM_ASSETS_DIR)/$$asset" "$(VM_SMOKE_ASSETS_DIR)/$$asset"; done
 	if [ -f "$(VM_CONFIG_FILE)" ]; then cp "$(VM_CONFIG_FILE)" "$(VM_SMOKE_ASSETS_DIR)/config.yaml"; fi
 	docker run --name $(CONTAINER_NAME)-smoke --rm -d --platform $(DOCKER_RUN_PLATFORM) \
 		$(SECURE_RUN_ARGS) \

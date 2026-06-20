@@ -23,7 +23,7 @@ func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	if cfg.ExecutorDir != executorDir {
 		t.Fatalf("ExecutorDir = %q, want %q", cfg.ExecutorDir, executorDir)
 	}
-	if cfg.VMImage != filepath.Join(executorDir, "alpine-podman.qcow2") {
+	if cfg.VMImage != filepath.Join(executorDir, "system.qcow2") {
 		t.Fatalf("VMImage = %q, want derived qcow2 image path", cfg.VMImage)
 	}
 	if cfg.QEMUPIDFile != filepath.Join(runtimeDir, "qemu.pid") {
@@ -86,7 +86,7 @@ guest_arch: amd64
 podman:
   registry_mirror: https://mirror.example.invalid
   data_root: /data/podman
-  disk_image: disks/podman-data.qcow2
+  disk_image: disks/data.qcow2
   disk_size: 25G
   storage_driver: vfs
 timeouts:
@@ -123,7 +123,7 @@ timeouts:
 	if cfg.PodmanDataDir != "/data/podman" {
 		t.Fatalf("PodmanDataDir = %q, want config override", cfg.PodmanDataDir)
 	}
-	if cfg.PodmanDiskImage != filepath.Join(executorDir, "disks/podman-data.qcow2") {
+	if cfg.PodmanDiskImage != filepath.Join(executorDir, "disks/data.qcow2") {
 		t.Fatalf("PodmanDiskImage = %q, want relative path resolved under executor dir", cfg.PodmanDiskImage)
 	}
 	if cfg.PodmanDiskSize != "25G" {
@@ -181,7 +181,7 @@ docker:
   data_root: /var/lib/docker
 podman:
   data_root: /data/podman
-  disk_image: disks/podman-data.qcow2
+  disk_image: disks/data.qcow2
   disk_size: 25G
   storage_driver: vfs
 `
@@ -196,7 +196,7 @@ podman:
 	if cfg.PodmanDataDir != "/data/podman" {
 		t.Fatalf("PodmanDataDir = %q, want podman config to be used", cfg.PodmanDataDir)
 	}
-	if cfg.PodmanDiskImage != filepath.Join(executorDir, "disks/podman-data.qcow2") {
+	if cfg.PodmanDiskImage != filepath.Join(executorDir, "disks/data.qcow2") {
 		t.Fatalf("PodmanDiskImage = %q, want relative Podman disk path resolved", cfg.PodmanDiskImage)
 	}
 	if cfg.PodmanDiskSize != "25G" {

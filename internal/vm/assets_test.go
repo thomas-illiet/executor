@@ -11,7 +11,7 @@ import (
 func TestEnsureAssetsAcceptsPresentFiles(t *testing.T) {
 	dir := t.TempDir()
 	paths := AssetPaths{
-		Image:  filepath.Join(dir, "alpine-podman.qcow2"),
+		Image:  filepath.Join(dir, "system.qcow2"),
 		Kernel: filepath.Join(dir, "vmlinuz-virt"),
 		Initrd: filepath.Join(dir, "initramfs-virt"),
 		SSHKey: filepath.Join(dir, "id_ed25519"),
@@ -31,7 +31,7 @@ func TestEnsureAssetsAcceptsPresentFiles(t *testing.T) {
 func TestEnsureAssetsReportsMissingFiles(t *testing.T) {
 	dir := t.TempDir()
 	err := EnsureAssets(AssetPaths{
-		Image:  filepath.Join(dir, "alpine-podman.qcow2"),
+		Image:  filepath.Join(dir, "system.qcow2"),
 		Kernel: filepath.Join(dir, "vmlinuz-virt"),
 		Initrd: filepath.Join(dir, "initramfs-virt"),
 		SSHKey: filepath.Join(dir, "id_ed25519"),

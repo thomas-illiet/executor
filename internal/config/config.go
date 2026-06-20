@@ -14,7 +14,7 @@ const (
 	defaultMemoryMiB            = 4096
 	defaultCPUs                 = 4
 	defaultPodmanDataRoot       = "/home/coder/.local/share/containers"
-	defaultPodmanDiskImage      = "/home/coder/.executor/podman-data.qcow2"
+	defaultPodmanDiskImage      = "/home/coder/.executor/data.qcow2"
 	defaultPodmanDiskSize       = "10G"
 	defaultPodmanStorageDriver  = "overlay"
 	defaultPodmanRegistryMirror = ""
@@ -145,7 +145,7 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 		PodmanDiskSize:       strings.TrimSpace(reader.GetString("podman.disk_size")),
 		PodmanStorageDriver:  strings.ToLower(strings.TrimSpace(reader.GetString("podman.storage_driver"))),
 		PodmanRegistryMirror: strings.TrimSpace(reader.GetString("podman.registry_mirror")),
-		VMImage:              filepath.Join(executorDir, "alpine-podman.qcow2"),
+		VMImage:              filepath.Join(executorDir, "system.qcow2"),
 		KernelImage:          filepath.Join(executorDir, "vmlinuz-virt"),
 		InitrdImage:          filepath.Join(executorDir, "initramfs-virt"),
 		QEMUBinary:           resolveConfigPath(executorDir, reader.GetString("qemu.binary")),

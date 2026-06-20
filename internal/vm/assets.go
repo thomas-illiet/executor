@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	imageAsset        = "alpine-podman.qcow2"
+	imageAsset        = "system.qcow2"
 	kernelAsset       = "vmlinuz-virt"
 	initrdAsset       = "initramfs-virt"
 	sshKeyAsset       = "id_ed25519"

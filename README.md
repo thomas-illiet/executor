@@ -55,8 +55,8 @@ make vm-asset
 container check that those assets exist and generate them first when needed.
 These generated files are ignored by git.
 
-The root disk asset is `alpine-podman.qcow2`.
+The root disk asset is `system.qcow2`.
 The Podman data disk is a qcow2 image created with thin provisioning
-(`preallocation=off`) at `/home/coder/.executor/podman-data.qcow2`;
+(`preallocation=off`) at `/home/coder/.executor/data.qcow2`;
 `podman.disk_size` is the virtual capacity, not the space allocated on the host
 at creation time.

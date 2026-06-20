@@ -24,14 +24,14 @@ func TestQEMUArgsUseQCOW2DiskAnd9PByDefault(t *testing.T) {
 	if !ok {
 		t.Fatal("missing -drive")
 	}
-	wantDrive := "format=qcow2,file=/tmp/alpine-podman.qcow2,if=none,cache=unsafe,aio=threads,id=drive0"
+	wantDrive := "format=qcow2,file=/tmp/system.qcow2,if=none,cache=unsafe,aio=threads,id=drive0"
 	if drive != wantDrive {
 		t.Fatalf("-drive = %q, want %q", drive, wantDrive)
 	}
 	if !argValueContains(args, "-device", "virtio-blk-pci,drive=drive0,iothread=io0,num-queues=4,queue-size=1024,write-cache=on") {
 		t.Fatalf("args %#v do not attach virtio-blk to io0", args)
 	}
-	if !argValueContains(args, "-drive", "format=qcow2,file=/tmp/podman-data.qcow2,if=none,cache=unsafe,aio=threads,id=drive1") {
+	if !argValueContains(args, "-drive", "format=qcow2,file=/tmp/data.qcow2,if=none,cache=unsafe,aio=threads,id=drive1") {
 		t.Fatalf("args %#v do not attach dedicated Podman data disk", args)
 	}
 	if !argValueContains(args, "-device", "virtio-blk-pci,drive=drive1,iothread=io0,num-queues=4,queue-size=1024,write-cache=on") {
@@ -92,8 +92,8 @@ func TestPrepareSocketsRejectsHyphenatedSSHSocket(t *testing.T) {
 func testConfig() config.Config {
 	return config.Config{
 		Home:            "/workspace",
-		VMImage:         "/tmp/alpine-podman.qcow2",
-		PodmanDiskImage: "/tmp/podman-data.qcow2",
+		VMImage:         "/tmp/system.qcow2",
+		PodmanDiskImage: "/tmp/data.qcow2",
 		QEMUBinary:      "qemu-system-x86_64",
 		QEMUPIDFile:     "/tmp/executorqemu.pid",
 		QEMUAccel:       "tcg,thread=multi",
@@ -111,7 +111,7 @@ func testConfig() config.Config {
 // TestEnsurePodmanDiskCreatesMissingImage verifies missing Podman disks are created.
 func TestEnsurePodmanDiskCreatesMissingImage(t *testing.T) {
 	dir := t.TempDir()
-	image := filepath.Join(dir, "nested", "podman-data.qcow2")
+	image := filepath.Join(dir, "nested", "data.qcow2")
 	runner := &recordingRunner{}
 	manager := Manager{
 		Config: config.Config{
@@ -137,7 +137,7 @@ func TestEnsurePodmanDiskCreatesMissingImage(t *testing.T) {
 // TestEnsurePodmanDiskKeepsExistingImage verifies existing Podman disks are reused.
 func TestEnsurePodmanDiskKeepsExistingImage(t *testing.T) {
 	dir := t.TempDir()
-	image := filepath.Join(dir, "podman-data.qcow2")
+	image := filepath.Join(dir, "data.qcow2")
 	if err := os.WriteFile(image, []byte("existing"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestStartKeepsSocketsWhenConfiguredQEMUAlreadyRuns(t *testing.T) {
 	}
 	manager := Manager{
 		Config: config.Config{
-			VMImage:       filepath.Join(dir, "alpine-podman.qcow2"),
+			VMImage:       filepath.Join(dir, "system.qcow2"),
 			QEMUBinary:    "qemu-system-x86_64",
 			QEMUPIDFile:   pidfile,
 			SSHSocket:     sshSocket,
