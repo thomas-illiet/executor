@@ -5,8 +5,8 @@ import (
 	"executor/internal/vm"
 )
 
-func (a App) engineCommand() []string {
-	return append(podmanEnvCommand(), "podman")
+func (a App) podmanCommand() []string {
+	return append(podmanEnvCommand(), CommandName)
 }
 
 func podmanEnvCommand() []string {

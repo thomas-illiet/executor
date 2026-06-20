@@ -54,11 +54,11 @@ func (a App) compose(ctx context.Context, manager vm.Manager, args []string) err
 // proxy runs a Podman-compatible command on the VM through SSH.
 func (a App) proxy(ctx context.Context, ssh vm.SSHClient, args []string) error {
 	workDir := a.remoteWorkDir()
-	engineCommand := a.engineCommand()
-	if command, ok := container.DetachedRunCommandWithPrefix(engineCommand, args); ok {
+	podmanCommand := a.podmanCommand()
+	if command, ok := container.DetachedRunCommandWithPrefix(podmanCommand, args); ok {
 		return ssh.RunNoTTY(ctx, "cd "+system.Single(workDir)+" && "+command)
 	}
-	command := container.CommandWithPrefix(engineCommand, args)
+	command := container.CommandWithPrefix(podmanCommand, args)
 	if container.WantsTTY(args) {
 		return ssh.RunInDir(ctx, workDir, command)
 	}

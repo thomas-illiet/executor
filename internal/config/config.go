@@ -25,7 +25,6 @@ const (
 )
 
 type Config struct {
-	Engine               string
 	Home                 string
 	ExecutorDir          string
 	PodmanDataDir        string
@@ -58,7 +57,6 @@ type Config struct {
 }
 
 type fileConfig struct {
-	Engine      string         `yaml:"engine" mapstructure:"engine"`
 	QEMU        qemuConfig     `yaml:"qemu" mapstructure:"qemu"`
 	HostShare   string         `yaml:"host_share" mapstructure:"host_share"`
 	GuestArch   string         `yaml:"guest_arch" mapstructure:"guest_arch"`
@@ -114,10 +112,6 @@ func FromEnvironment(argv0 string) (Config, error) {
 }
 
 func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
-	if err := rejectUnsupportedConfig(configPath); err != nil {
-		return Config{}, err
-	}
-
 	reader := viper.New()
 	reader.SetConfigFile(configPath)
 	reader.SetConfigType("yaml")
@@ -151,7 +145,6 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 	runtimeDir := filepath.Join(home, ".executor_runtime")
 
 	cfg := Config{
-		Engine:               reader.GetString("engine"),
 		Home:                 home,
 		ExecutorDir:          executorDir,
 		PodmanDataDir:        strings.TrimSpace(reader.GetString("podman.data_root")),
@@ -204,24 +197,8 @@ func ensureConfig(path string, cfg fileConfig) error {
 	return os.WriteFile(path, content, 0o644)
 }
 
-func rejectUnsupportedConfig(path string) error {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	values := map[string]any{}
-	if err := yaml.Unmarshal(content, &values); err != nil {
-		return err
-	}
-	if _, ok := values["docker"]; ok {
-		return fmt.Errorf("config key docker is unsupported; use podman")
-	}
-	return nil
-}
-
 func defaultFileConfig() fileConfig {
 	return fileConfig{
-		Engine: "podman",
 		QEMU: qemuConfig{
 			Binary:    "qemu-system-x86_64",
 			Accel:     "auto",
@@ -247,7 +224,6 @@ func defaultFileConfig() fileConfig {
 }
 
 func setDefaults(reader *viper.Viper, cfg fileConfig) {
-	reader.SetDefault("engine", cfg.Engine)
 	reader.SetDefault("qemu.binary", cfg.QEMU.Binary)
 	reader.SetDefault("qemu.accel", cfg.QEMU.Accel)
 	reader.SetDefault("qemu.io_profile", cfg.QEMU.IOProfile)
@@ -301,9 +277,6 @@ func resolveConfigPath(baseDir, value string) string {
 }
 
 func validate(cfg Config) error {
-	if err := validateOneOf("engine", cfg.Engine, "podman"); err != nil {
-		return err
-	}
 	if cfg.MemoryMiB <= 0 {
 		return fmt.Errorf("qemu.memory_mib must be positive")
 	}

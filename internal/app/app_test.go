@@ -125,23 +125,6 @@ func TestDetachedRunCommandUsesCreateAndStart(t *testing.T) {
 	}
 }
 
-// TestServeDoesNotStartVM verifies serve waits without launching QEMU.
-func TestServeDoesNotStartVM(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	runner := &recordingRunner{}
-	app := App{Out: io.Discard, Err: io.Discard}
-	manager := vm.NewManager(config.Config{QEMUBinary: "qemu-system-x86_64"}, runner)
-
-	err := app.serve(ctx, manager)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("serve() error = %v, want context.Canceled", err)
-	}
-	if len(runner.runs) != 0 {
-		t.Fatalf("serve() ran commands %#v, want none", runner.runs)
-	}
-}
-
 // TestShutdownStopsPodmanBeforeQEMU verifies Podman is stopped before QEMU exits.
 func TestShutdownStopsPodmanBeforeQEMU(t *testing.T) {
 	dir := t.TempDir()
@@ -279,7 +262,7 @@ func TestUsagePrintsQEMUUsage(t *testing.T) {
 	}
 	var out strings.Builder
 	app := App{
-		Config: config.Config{Engine: "executor", QEMUBinary: "qemu-system-x86_64"},
+		Config: config.Config{QEMUBinary: "qemu-system-x86_64"},
 		Runner: runner,
 		Out:    &out,
 		Err:    io.Discard,
@@ -317,7 +300,7 @@ func TestUsageErrorsWhenQEMUIsStopped(t *testing.T) {
 		},
 	}
 	app := App{
-		Config: config.Config{Engine: "executor", QEMUBinary: "qemu-system-x86_64"},
+		Config: config.Config{QEMUBinary: "qemu-system-x86_64"},
 		Runner: runner,
 		Out:    io.Discard,
 		Err:    io.Discard,
@@ -334,7 +317,6 @@ func TestProxyUsesCoderHomeWhenHostShareDisabled(t *testing.T) {
 	runner := &recordingRunner{}
 	app := App{
 		Config: config.Config{
-			Engine:    "podman",
 			HostShare: "none",
 			WorkDir:   "/home/appuser",
 		},

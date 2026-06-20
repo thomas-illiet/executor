@@ -57,6 +57,18 @@ func TestTopLevelHelpIsPodmanLikeAndLocal(t *testing.T) {
 					t.Fatalf("help output %q does not contain %q", got, fragment)
 				}
 			}
+			if strings.Contains(got, "  term                 Open an SSH shell in the VM") {
+				t.Fatalf("help output %q contains hidden term command", got)
+			}
+			for _, hidden := range []string{
+				"  serve                Keep the proxy container running without starting QEMU",
+				"  serve --init         Boot QEMU, configure podman, then keep the container running",
+				"  serve --init         Boot QEMU, configure Podman, then keep the container running",
+			} {
+				if strings.Contains(got, hidden) {
+					t.Fatalf("help output %q contains removed serve command %q", got, hidden)
+				}
+			}
 		})
 	}
 }
@@ -92,6 +104,7 @@ func TestForwardedCommandsRequireInit(t *testing.T) {
 		{name: "podman top", args: []string{"top", "container"}},
 		{name: "run subcommand help", args: []string{"run", "--help"}},
 		{name: "help podman subcommand", args: []string{"help", "run"}},
+		{name: "help removed serve command", args: []string{"help", "serve"}},
 	}
 
 	for _, tt := range tests {
@@ -181,7 +194,6 @@ func TestDownloadCommandDownloadsAssets(t *testing.T) {
 	var out strings.Builder
 	application := app.App{
 		Config: config.Config{
-			Engine:      "podman",
 			AssetMirror: "https://example.invalid/assets",
 			VMImage:     filepath.Join(dir, "alpine-podman.qcow2"),
 			KernelImage: filepath.Join(dir, "vmlinuz-virt"),
@@ -206,7 +218,6 @@ func TestDownloadCommandDownloadsAssets(t *testing.T) {
 func newTestApp(runner *scriptedRunner, out io.Writer, errOut io.Writer) app.App {
 	return app.App{
 		Config: config.Config{
-			Engine:    "podman",
 			SSHSocket: "/tmp/executor-ssh.sock",
 			SSHUser:   "coder",
 		},

@@ -10,7 +10,10 @@ import (
 	"executor/internal/vm"
 )
 
-const Version = "0.1.0"
+const (
+	CommandName = "podman"
+	Version     = "0.1.0"
+)
 
 const localForwardCheckHost = "127.0.0.1"
 
@@ -50,21 +53,6 @@ func (a App) Init(ctx context.Context) error {
 		return err
 	}
 	return a.init(ctx, a.manager(), creds)
-}
-
-// Serve keeps the proxy container alive, optionally initializing the VM first.
-func (a App) Serve(ctx context.Context, initFirst bool) error {
-	manager := a.manager()
-	if initFirst {
-		creds, err := vm.LoadCredentials(a.Config.BootFile)
-		if err != nil {
-			return err
-		}
-		if err := a.init(ctx, manager, creds); err != nil {
-			return err
-		}
-	}
-	return a.serve(ctx, manager)
 }
 
 // Boot starts QEMU without configuring Podman.
@@ -133,7 +121,7 @@ func (a App) ExecuteContainer(ctx context.Context, args []string) error {
 	}
 	manager := a.manager()
 	if !a.sshReachable(ctx, manager) {
-		return fmt.Errorf("%s init has not been run: run '%s init' first", a.Config.Engine, a.Config.Engine)
+		return fmt.Errorf("%s init has not been run: run '%s init' first", CommandName, CommandName)
 	}
 
 	switch args[0] {

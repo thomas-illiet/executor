@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"executor/internal/vm"
 )
@@ -33,26 +31,6 @@ func (a App) init(ctx context.Context, manager vm.Manager, creds vm.Credentials)
 	}
 	fmt.Fprintln(a.Out, "Ready.")
 	return nil
-}
-
-// serve keeps the proxy container alive until the context or process stops.
-func (a App) serve(ctx context.Context, manager vm.Manager) error {
-	fmt.Fprintln(a.Out, "Proxy container is running. Run `executor init` inside it to start QEMU.")
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(signals)
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-signals:
-		fmt.Fprintln(a.Out, "Stopping proxy container...")
-		_ = manager.StopPodman(context.Background())
-		_ = manager.Sync(context.Background())
-		_ = manager.Stop(context.Background())
-		return nil
-	}
 }
 
 // shutdown stops Podman containers before stopping QEMU.

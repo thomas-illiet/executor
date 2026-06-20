@@ -4,7 +4,6 @@ import "github.com/spf13/cobra"
 
 var internalHelpTargets = map[string]struct{}{
 	"init":      {},
-	"serve":     {},
 	"boot":      {},
 	"shutdown":  {},
 	"reset":     {},

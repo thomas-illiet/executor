@@ -81,16 +81,13 @@ Global Options:
 Executor Commands:
   download             Download the Alpine VM assets
   init                 Boot QEMU and configure %[1]s
-  serve                Keep the proxy container running without starting QEMU
-  serve --init         Boot QEMU, configure %[1]s, then keep the container running
   status               Show QEMU, SSH and %[1]s status
   usage                Show QEMU CPU and memory usage
   shutdown             Stop QEMU and %[1]s
   reset [--force]      Remove Podman state before a fresh init
-  term                 Open an SSH shell in the VM
   add-certs <dir>      Copy CA certificates into the VM
 
 Run '%[1]s COMMAND --help' for more information on a command.
 
-`, a.Config.Engine)
+	`, CommandName)
 }

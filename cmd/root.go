@@ -27,7 +27,7 @@ func ExecuteContext(ctx context.Context, application app.App, args []string) err
 func New(application app.App) *cobra.Command {
 	c := &cli{application: application}
 	root := &cobra.Command{
-		Use:                application.Config.Engine,
+		Use:                app.CommandName,
 		Short:              "A self-sufficient runtime for containers",
 		SilenceUsage:       true,
 		SilenceErrors:      true,
@@ -43,7 +43,6 @@ func New(application app.App) *cobra.Command {
 
 	root.AddCommand(
 		newInitCommand(c),
-		newServeCommand(c),
 		newBootCommand(c),
 		newDownloadCommand(c),
 		newShutdownCommand(c),

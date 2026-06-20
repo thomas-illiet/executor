@@ -22,9 +22,6 @@ func TestLoadCreatesDefaultConfig(t *testing.T) {
 	if cfg.ExecutorDir != executorDir {
 		t.Fatalf("ExecutorDir = %q, want %q", cfg.ExecutorDir, executorDir)
 	}
-	if cfg.Engine != "podman" {
-		t.Fatalf("Engine = %q, want podman", cfg.Engine)
-	}
 	if cfg.VMImage != filepath.Join(executorDir, "alpine-podman.qcow2") {
 		t.Fatalf("VMImage = %q, want derived qcow2 image path", cfg.VMImage)
 	}
@@ -68,8 +65,8 @@ func TestLoadCreatesDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(content), "engine: podman") {
-		t.Fatalf("generated config %q does not include engine", string(content))
+	if strings.Contains(string(content), "engine:") {
+		t.Fatalf("generated config %q includes removed engine key", string(content))
 	}
 	for _, fragment := range []string{
 		"podman:",
@@ -93,8 +90,7 @@ func TestLoadReadsConfigFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(executorDir, configFileName)
-	content := `engine: podman
-qemu:
+	content := `qemu:
   binary: tools/qemu-system-x86_64
   accel: tcg,thread=multi
   io_profile: balanced
@@ -124,9 +120,6 @@ timeouts:
 		t.Fatal(err)
 	}
 
-	if cfg.Engine != "podman" {
-		t.Fatalf("Engine = %q, want podman", cfg.Engine)
-	}
 	if cfg.QEMUBinary != filepath.Join(executorDir, "tools/qemu-system-x86_64") {
 		t.Fatalf("QEMUBinary = %q, want relative path resolved under executor dir", cfg.QEMUBinary)
 	}
@@ -192,7 +185,7 @@ func TestLoadIgnoresExecutorEnvironment(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsDockerConfigKey(t *testing.T) {
+func TestLoadIgnoresLegacyEngineAndDockerKeys(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	executorDir := filepath.Join(home, ".executor")
@@ -202,38 +195,31 @@ func TestLoadRejectsDockerConfigKey(t *testing.T) {
 	content := `engine: docker
 docker:
   data_root: /var/lib/docker
-`
-	if err := os.WriteFile(filepath.Join(executorDir, configFileName), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := Load("executor")
-	if err == nil || !strings.Contains(err.Error(), "config key docker is unsupported") {
-		t.Fatalf("Load() error = %v, want docker config rejection", err)
-	}
-}
-
-func TestLoadRejectsDockerEngine(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	executorDir := filepath.Join(home, ".executor")
-	if err := os.MkdirAll(executorDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	content := `engine: docker
 podman:
-  data_root: /home/coder/.local/share/containers
-  disk_image: /home/appuser/.executor/podman-data.qcow2
-  disk_size: 10G
-  storage_driver: overlay
+  data_root: /data/podman
+  disk_image: disks/podman-data.qcow2
+  disk_size: 25G
+  storage_driver: vfs
 `
 	if err := os.WriteFile(filepath.Join(executorDir, configFileName), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := Load("executor")
-	if err == nil || !strings.Contains(err.Error(), "engine must be one of podman") {
-		t.Fatalf("Load() error = %v, want docker engine rejection", err)
+	cfg, err := Load("executor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PodmanDataDir != "/data/podman" {
+		t.Fatalf("PodmanDataDir = %q, want podman config to be used", cfg.PodmanDataDir)
+	}
+	if cfg.PodmanDiskImage != filepath.Join(executorDir, "disks/podman-data.qcow2") {
+		t.Fatalf("PodmanDiskImage = %q, want relative Podman disk path resolved", cfg.PodmanDiskImage)
+	}
+	if cfg.PodmanDiskSize != "25G" {
+		t.Fatalf("PodmanDiskSize = %q, want podman config to be used", cfg.PodmanDiskSize)
+	}
+	if cfg.PodmanStorageDriver != "vfs" {
+		t.Fatalf("PodmanStorageDriver = %q, want podman config to be used", cfg.PodmanStorageDriver)
 	}
 }
 

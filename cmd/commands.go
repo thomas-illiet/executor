@@ -9,7 +9,7 @@ import (
 func newInitCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: "Boot QEMU and configure the container engine",
+		Short: "Boot QEMU and configure Podman",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return c.application.Init(command.Context())
@@ -17,24 +17,10 @@ func newInitCommand(c *cli) *cobra.Command {
 	}
 }
 
-func newServeCommand(c *cli) *cobra.Command {
-	var initFirst bool
-	command := &cobra.Command{
-		Use:   "serve",
-		Short: "Keep the proxy container running",
-		Args:  cobra.NoArgs,
-		RunE: func(command *cobra.Command, _ []string) error {
-			return c.application.Serve(command.Context(), initFirst)
-		},
-	}
-	command.Flags().BoolVar(&initFirst, "init", false, "boot QEMU and configure the container engine before serving")
-	return command
-}
-
 func newBootCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "boot",
-		Short: "Start QEMU without configuring the container engine",
+		Short: "Start QEMU without configuring Podman",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return c.application.Boot(command.Context())
@@ -60,7 +46,7 @@ func newDownloadCommand(c *cli) *cobra.Command {
 func newShutdownCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "shutdown",
-		Short: "Stop QEMU and the container engine",
+		Short: "Stop QEMU and Podman",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return c.application.Shutdown(command.Context(), app.ShutdownOptions{})
@@ -84,9 +70,10 @@ func newResetCommand(c *cli) *cobra.Command {
 
 func newTermCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
-		Use:   "term",
-		Short: "Open an SSH shell in the VM",
-		Args:  cobra.NoArgs,
+		Use:    "term",
+		Short:  "Open an SSH shell in the VM",
+		Hidden: true,
+		Args:   cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return c.application.Term(command.Context())
 		},
@@ -107,7 +94,7 @@ func newAddCertsCommand(c *cli) *cobra.Command {
 func newStatusCommand(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show QEMU, SSH, and container engine status",
+		Short: "Show QEMU, SSH, and Podman status",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return c.application.Status(command.Context())

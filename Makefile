@@ -82,13 +82,8 @@ vm-asset: docker-tooling-build ## Generate Alpine VM assets using the local tool
 
 vm-config: ## Create the mounted executor config when it is missing.
 	@mkdir -p "$(VM_ASSETS_DIR)"
-	@if [ -f "$(VM_CONFIG_FILE)" ] && grep -Eq '^(engine:[[:space:]]*docker|docker:)' "$(VM_CONFIG_FILE)"; then \
-		echo "Unsupported Docker config at $(VM_CONFIG_FILE); remove it before running vm-config." >&2; \
-		exit 1; \
-	fi
 	@if [ ! -f "$(VM_CONFIG_FILE)" ]; then \
 		{ \
-			printf '%s\n' 'engine: podman'; \
 			printf '%s\n' 'qemu:'; \
 			printf '%s\n' '  binary: qemu-system-x86_64'; \
 			printf '%s\n' '  accel: auto'; \

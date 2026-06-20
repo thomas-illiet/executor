@@ -12,12 +12,12 @@ func Command(args []string) []string {
 	return CommandWithPrefix([]string{"podman"}, args)
 }
 
-// CommandWithPrefix builds the container engine command with an optional environment prefix.
-func CommandWithPrefix(engineCommand []string, args []string) []string {
-	command := make([]string, 0, len(engineCommand)+len(args)+1)
-	command = append(command, engineCommand...)
+// CommandWithPrefix builds the Podman command with an optional environment prefix.
+func CommandWithPrefix(podmanCommand []string, args []string) []string {
+	command := make([]string, 0, len(podmanCommand)+len(args)+1)
+	command = append(command, podmanCommand...)
 	command = append(command, args...)
-	if engineName(engineCommand) == "podman" && len(args) > 0 && args[0] == "build" {
+	if commandName(podmanCommand) == "podman" && len(args) > 0 && args[0] == "build" {
 		hasLayers := false
 		for _, arg := range args {
 			if strings.HasPrefix(arg, "--layers") {
@@ -53,14 +53,14 @@ func DetachedRunCommand(args []string) (string, bool) {
 	return DetachedRunCommandWithPrefix([]string{"podman"}, args)
 }
 
-// DetachedRunCommandWithPrefix builds a safer command for detached container runs.
-func DetachedRunCommandWithPrefix(engineCommand []string, args []string) (string, bool) {
+// DetachedRunCommandWithPrefix builds a safer command for detached Podman runs.
+func DetachedRunCommandWithPrefix(podmanCommand []string, args []string) (string, bool) {
 	if len(args) == 0 || args[0] != "run" || !hasDetachFlag(args[1:]) || WantsTTY(args) {
 		return "", false
 	}
-	createCommand := CommandWithPrefix(engineCommand, detachedRunCreateArgs(args))
+	createCommand := CommandWithPrefix(podmanCommand, detachedRunCreateArgs(args))
 	create := system.Join(createCommand)
-	startCommand := append(append([]string(nil), engineCommand...), "start")
+	startCommand := append(append([]string(nil), podmanCommand...), "start")
 	start := system.Join(startCommand)
 	return "id=$(" + create + "); " +
 		"status=$?; " +
@@ -71,11 +71,11 @@ func DetachedRunCommandWithPrefix(engineCommand []string, args []string) (string
 		"exit \"$status\"", true
 }
 
-func engineName(engineCommand []string) string {
-	if len(engineCommand) == 0 {
+func commandName(command []string) string {
+	if len(command) == 0 {
 		return ""
 	}
-	return engineCommand[len(engineCommand)-1]
+	return command[len(command)-1]
 }
 
 // RewriteRunPublishArgs normalizes publish args and returns port mappings.
