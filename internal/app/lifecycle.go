@@ -17,11 +17,13 @@ func (a App) init(ctx context.Context, manager vm.Manager, creds vm.Credentials)
 	if err := a.ensureMemory(); err != nil {
 		return err
 	}
-	if err := downloadVMAssets(ctx, a.assetPaths(), a.Out); err != nil {
-		return err
-	}
 	if err := a.ensureVMAssets(); err != nil {
-		return err
+		if err := downloadVMAssets(ctx, a.assetPaths(), a.Out); err != nil {
+			return err
+		}
+		if err := a.ensureVMAssets(); err != nil {
+			return err
+		}
 	}
 	fmt.Fprintln(a.Out, "Initializing VM...")
 	if err := manager.Start(ctx, true); err != nil {

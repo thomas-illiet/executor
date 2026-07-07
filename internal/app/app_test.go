@@ -235,6 +235,50 @@ func TestInitDownloadFailureDoesNotStartQEMU(t *testing.T) {
 	}
 }
 
+// TestInitSkipsDownloadWhenAssetsExist verifies local generated assets are reused.
+func TestInitSkipsDownloadWhenAssetsExist(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Config{
+		VMImage:       filepath.Join(dir, "system.qcow2"),
+		KernelImage:   filepath.Join(dir, "vmlinuz-virt"),
+		InitrdImage:   filepath.Join(dir, "initramfs-virt"),
+		SSHKeyPath:    filepath.Join(dir, "id_ed25519"),
+		QEMUBinary:    "qemu-system-x86_64",
+		QEMUPIDFile:   filepath.Join(dir, "qemu.pid"),
+		SSHSocket:     filepath.Join(dir, "executorssh.sock"),
+		MonitorSocket: filepath.Join(dir, "monitorssh.sock"),
+	}
+	if err := writeTestAssets(vm.AssetPaths{
+		Image:  cfg.VMImage,
+		Kernel: cfg.KernelImage,
+		Initrd: cfg.InitrdImage,
+		SSHKey: cfg.SSHKeyPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	downloadCalls := 0
+	withDownloadVMAssets(t, func(_ context.Context, _ vm.AssetPaths, _ io.Writer) error {
+		downloadCalls++
+		return errors.New("download should not run")
+	})
+	runner := &recordingRunner{}
+	app := App{
+		Config: cfg,
+		Runner: runner,
+		Out:    io.Discard,
+		Err:    io.Discard,
+		In:     strings.NewReader(""),
+	}
+
+	err := app.init(context.Background(), vm.NewManager(cfg, runner), vm.Credentials{})
+	if err == nil || !strings.Contains(err.Error(), "QEMU Unix socket host forwarding probe did not write pidfile") {
+		t.Fatalf("init() error = %v, want QEMU probe error after asset reuse", err)
+	}
+	if downloadCalls != 0 {
+		t.Fatalf("download calls = %d, want 0", downloadCalls)
+	}
+}
+
 // TestResetDownloadsAssetsAndRemovesPodmanDisk verifies reset refreshes assets through init.
 func TestResetDownloadsAssetsAndRemovesPodmanDisk(t *testing.T) {
 	dir := t.TempDir()
