@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +12,7 @@ import (
 
 // status prints the current QEMU, monitor, SSH, and Podman status.
 func (a App) status(ctx context.Context, manager vm.Manager) error {
-	qemuRunning, qemuDetail := a.qemuStatus(ctx)
+	qemuRunning, qemuDetail := a.qemuStatus(ctx, manager)
 	monitorReachable := a.monitorReachable(ctx, manager)
 	sshReachable := a.sshReachable(ctx, manager)
 	podmanRunning, podmanDetail := a.podmanStatus(ctx, manager, sshReachable)
@@ -36,7 +35,7 @@ func (a App) status(ctx context.Context, manager vm.Manager) error {
 
 // usage prints a CPU and memory usage snapshot for the QEMU process.
 func (a App) usage(ctx context.Context) error {
-	process, ok := a.qemuProcess(ctx)
+	process, ok := a.qemuProcess(ctx, a.manager())
 	if !ok {
 		return fmt.Errorf("QEMU is not running")
 	}
@@ -80,25 +79,24 @@ func (a App) sshReachable(ctx context.Context, manager vm.Manager) bool {
 }
 
 // qemuStatus checks whether the configured QEMU process is running.
-func (a App) qemuStatus(ctx context.Context) (bool, string) {
-	process, ok := a.qemuProcess(ctx)
+func (a App) qemuStatus(ctx context.Context, manager vm.Manager) (bool, string) {
+	process, ok := a.qemuProcess(ctx, manager)
 	if !ok {
 		return false, "stopped"
 	}
 	return true, "running (pid " + process.PID + ")"
 }
 
-// qemuProcess returns the first running QEMU process matching the configured binary.
-func (a App) qemuProcess(ctx context.Context) (qemuProcess, bool) {
-	name := filepath.Base(a.Config.QEMUBinary)
+// qemuProcess returns the configured QEMU process from the pidfile.
+func (a App) qemuProcess(ctx context.Context, manager vm.Manager) (qemuProcess, bool) {
 	checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	output, err := a.Runner.Output(checkCtx, "pgrep", "-af", name)
+	pid, command, err := manager.QEMUProcess(checkCtx)
 	if err != nil {
 		return qemuProcess{}, false
 	}
-	return firstQEMUProcess(output)
+	return qemuProcess{PID: pid, Command: command}, true
 }
 
 // readQEMUUsage reads process CPU and memory usage from ps.
@@ -137,25 +135,6 @@ type qemuUsageStats struct {
 	RSSKiB     int64
 	VSZKiB     int64
 	Command    string
-}
-
-// firstQEMUProcess returns the first non-defunct QEMU process from pgrep output.
-func firstQEMUProcess(output []byte) (qemuProcess, bool) {
-	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.Contains(line, "<defunct>") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		return qemuProcess{
-			PID:     fields[0],
-			Command: strings.Join(fields[1:], " "),
-		}, true
-	}
-	return qemuProcess{}, false
 }
 
 // parseQEMUUsage parses ps output into QEMU usage statistics.

@@ -329,26 +329,17 @@ func TestResetDownloadsAssetsAndRemovesPodmanDisk(t *testing.T) {
 	}
 }
 
-// TestFirstQEMUProcessSkipsDefunct verifies stale QEMU processes are ignored.
-func TestFirstQEMUProcessSkipsDefunct(t *testing.T) {
-	process, ok := firstQEMUProcess([]byte("42 [qemu-system-x86_64] <defunct>\n123 qemu-system-x86_64 -m 2048\n"))
-	if !ok {
-		t.Fatal("firstQEMUProcess() did not find running process")
-	}
-	if process.PID != "123" {
-		t.Fatalf("process PID = %q, want 123", process.PID)
-	}
-	if process.Command != "qemu-system-x86_64 -m 2048" {
-		t.Fatalf("process command = %q, want QEMU command", process.Command)
-	}
-}
-
 // TestUsagePrintsQEMUUsage verifies the usage command displays CPU and memory usage.
 func TestUsagePrintsQEMUUsage(t *testing.T) {
+	dir := t.TempDir()
+	pidfile := filepath.Join(dir, "qemu.pid")
+	if err := os.WriteFile(pidfile, []byte("123\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	runner := &scriptedRunner{
 		outputs: map[string]scriptedOutput{
-			commandKey("pgrep", "-af", "qemu-system-x86_64"): {
-				output: []byte("123 qemu-system-x86_64 -m 2048\n"),
+			commandKey("ps", "-p", "123", "-o", "args="): {
+				output: []byte("qemu-system-x86_64 -pidfile " + pidfile + " -m 2048\n"),
 			},
 			commandKey("ps", "-p", "123", "-o", "pid=", "-o", "pcpu=", "-o", "pmem=", "-o", "rss=", "-o", "vsz=", "-o", "comm="): {
 				output: []byte("123 12.5 6.3 524288 1048576 qemu-system-x86_64\n"),
@@ -357,7 +348,7 @@ func TestUsagePrintsQEMUUsage(t *testing.T) {
 	}
 	var out strings.Builder
 	app := App{
-		Config: config.Config{QEMUBinary: "qemu-system-x86_64"},
+		Config: config.Config{QEMUBinary: "qemu-system-x86_64", QEMUPIDFile: pidfile},
 		Runner: runner,
 		Out:    &out,
 		Err:    io.Discard,
@@ -387,15 +378,20 @@ func TestUsagePrintsQEMUUsage(t *testing.T) {
 
 // TestUsageErrorsWhenQEMUIsStopped verifies usage reports a missing QEMU process.
 func TestUsageErrorsWhenQEMUIsStopped(t *testing.T) {
+	dir := t.TempDir()
+	pidfile := filepath.Join(dir, "qemu.pid")
+	if err := os.WriteFile(pidfile, []byte("123\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	runner := &scriptedRunner{
 		outputs: map[string]scriptedOutput{
-			commandKey("pgrep", "-af", "qemu-system-x86_64"): {
-				err: errors.New("pgrep failed"),
+			commandKey("ps", "-p", "123", "-o", "args="): {
+				err: errors.New("ps failed"),
 			},
 		},
 	}
 	app := App{
-		Config: config.Config{QEMUBinary: "qemu-system-x86_64"},
+		Config: config.Config{QEMUBinary: "qemu-system-x86_64", QEMUPIDFile: pidfile},
 		Runner: runner,
 		Out:    io.Discard,
 		Err:    io.Discard,
@@ -405,6 +401,37 @@ func TestUsageErrorsWhenQEMUIsStopped(t *testing.T) {
 	err := app.Usage(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "QEMU is not running") {
 		t.Fatalf("usage error = %v, want QEMU is not running", err)
+	}
+}
+
+// TestUsageRejectsUnrelatedConfiguredPID verifies usage does not pick another QEMU.
+func TestUsageRejectsUnrelatedConfiguredPID(t *testing.T) {
+	dir := t.TempDir()
+	pidfile := filepath.Join(dir, "qemu.pid")
+	if err := os.WriteFile(pidfile, []byte("123\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := &scriptedRunner{
+		outputs: map[string]scriptedOutput{
+			commandKey("ps", "-p", "123", "-o", "args="): {
+				output: []byte("sleep 999\n"),
+			},
+		},
+	}
+	app := App{
+		Config: config.Config{QEMUBinary: "qemu-system-x86_64", QEMUPIDFile: pidfile},
+		Runner: runner,
+		Out:    io.Discard,
+		Err:    io.Discard,
+		In:     strings.NewReader(""),
+	}
+
+	err := app.Usage(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "QEMU is not running") {
+		t.Fatalf("usage error = %v, want QEMU is not running", err)
+	}
+	if len(runner.outputCalls) != 1 {
+		t.Fatalf("output calls = %#v, want only pidfile ps validation", runner.outputCalls)
 	}
 }
 

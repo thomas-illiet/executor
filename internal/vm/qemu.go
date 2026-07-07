@@ -143,13 +143,42 @@ func (m Manager) readQEMUPID() (string, error) {
 	return pid, nil
 }
 
+// QEMUProcess returns the configured QEMU process PID and command line.
+func (m Manager) QEMUProcess(ctx context.Context) (string, string, error) {
+	pid, err := m.readQEMUPID()
+	if err != nil {
+		return "", "", err
+	}
+	command, err := m.qemuProcessCommand(ctx, pid)
+	if err != nil {
+		return "", "", err
+	}
+	if err := m.validateQEMUCommand(pid, command); err != nil {
+		return "", "", err
+	}
+	return pid, command, nil
+}
+
 // validateQEMUProcess verifies a PID belongs to the configured QEMU runtime.
 func (m Manager) validateQEMUProcess(ctx context.Context, pid string) error {
+	command, err := m.qemuProcessCommand(ctx, pid)
+	if err != nil {
+		return err
+	}
+	return m.validateQEMUCommand(pid, command)
+}
+
+// qemuProcessCommand reads the command line for a PID.
+func (m Manager) qemuProcessCommand(ctx context.Context, pid string) (string, error) {
 	output, err := m.Runner.Output(ctx, "ps", "-p", pid, "-o", "args=")
 	if err != nil {
-		return fmt.Errorf("QEMU pid %s is not running: %w", pid, err)
+		return "", fmt.Errorf("QEMU pid %s is not running: %w", pid, err)
 	}
-	command := strings.TrimSpace(string(output))
+	return strings.TrimSpace(string(output)), nil
+}
+
+// validateQEMUCommand verifies a command line belongs to the configured QEMU runtime.
+func (m Manager) validateQEMUCommand(pid string, command string) error {
 	want := filepath.Base(m.Config.QEMUBinary)
 	if !strings.Contains(command, want) {
 		return fmt.Errorf("pid %s is %q, not a %q process", pid, command, want)
