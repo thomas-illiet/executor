@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -176,6 +177,11 @@ func TestShutdownStopsPodmanBeforeQEMU(t *testing.T) {
 // TestBootReportsMissingAssets verifies boot fails before QEMU when assets are missing.
 func TestBootReportsMissingAssets(t *testing.T) {
 	dir := t.TempDir()
+	downloadCalls := 0
+	withDownloadVMAssets(t, func(_ context.Context, _ vm.AssetPaths, _ io.Writer) error {
+		downloadCalls++
+		return nil
+	})
 	app := App{
 		Config: config.Config{
 			VMImage:     dir + "/alpine-container.qcow2",
@@ -193,10 +199,44 @@ func TestBootReportsMissingAssets(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "generate and mount them before boot") {
 		t.Fatalf("Boot() error = %v, want asset guidance", err)
 	}
+	if downloadCalls != 0 {
+		t.Fatalf("Boot() download calls = %d, want 0", downloadCalls)
+	}
 }
 
-// TestResetRemovesPodmanDiskImageAndKeepsVMImage verifies reset preserves the VM base image.
-func TestResetRemovesPodmanDiskImageAndKeepsVMImage(t *testing.T) {
+// TestInitDownloadFailureDoesNotStartQEMU verifies failed asset downloads stop init before QEMU.
+func TestInitDownloadFailureDoesNotStartQEMU(t *testing.T) {
+	dir := t.TempDir()
+	downloadErr := errors.New("download VM asset system.qcow2: boom")
+	withDownloadVMAssets(t, func(_ context.Context, _ vm.AssetPaths, _ io.Writer) error {
+		return downloadErr
+	})
+	runner := &recordingRunner{}
+	cfg := config.Config{
+		VMImage:     filepath.Join(dir, "system.qcow2"),
+		KernelImage: filepath.Join(dir, "vmlinuz-virt"),
+		InitrdImage: filepath.Join(dir, "initramfs-virt"),
+		SSHKeyPath:  filepath.Join(dir, "id_ed25519"),
+	}
+	app := App{
+		Config: cfg,
+		Runner: runner,
+		Out:    io.Discard,
+		Err:    io.Discard,
+		In:     strings.NewReader(""),
+	}
+
+	err := app.init(context.Background(), vm.NewManager(cfg, runner), vm.Credentials{})
+	if !errors.Is(err, downloadErr) {
+		t.Fatalf("init() error = %v, want download error", err)
+	}
+	if len(runner.runs) != 0 {
+		t.Fatalf("runs = %#v, want no QEMU commands after download failure", runner.runs)
+	}
+}
+
+// TestResetDownloadsAssetsAndRemovesPodmanDisk verifies reset refreshes assets through init.
+func TestResetDownloadsAssetsAndRemovesPodmanDisk(t *testing.T) {
 	dir := t.TempDir()
 	vmImage := dir + "/alpine-container.qcow2"
 	podmanDisk := dir + "/data.qcow2"
@@ -206,10 +246,16 @@ func TestResetRemovesPodmanDiskImageAndKeepsVMImage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	downloadCalls := 0
+	withDownloadVMAssets(t, func(_ context.Context, paths vm.AssetPaths, _ io.Writer) error {
+		downloadCalls++
+		return writeTestAssets(paths)
+	})
 	runner := &recordingRunner{}
 	cfg := config.Config{
 		VMImage:         vmImage,
 		PodmanDiskImage: podmanDisk,
+		PodmanDiskSize:  "10G",
 		KernelImage:     dir + "/vmlinuz-virt",
 		InitrdImage:     dir + "/initramfs-virt",
 		SSHKeyPath:      dir + "/id_ed25519",
@@ -224,8 +270,11 @@ func TestResetRemovesPodmanDiskImageAndKeepsVMImage(t *testing.T) {
 	}
 
 	err := app.reset(context.Background(), vm.NewManager(cfg, runner), vm.Credentials{}, ResetOptions{Force: true})
-	if err == nil || !strings.Contains(err.Error(), "generate and mount them before boot") {
-		t.Fatalf("reset() error = %v, want missing asset guidance after disk removal", err)
+	if err == nil || !strings.Contains(err.Error(), "ssh socket path must be set") {
+		t.Fatalf("reset() error = %v, want QEMU start validation after asset download", err)
+	}
+	if downloadCalls != 1 {
+		t.Fatalf("download calls = %d, want 1", downloadCalls)
 	}
 	if _, err := os.Stat(vmImage); err != nil {
 		t.Fatalf("VM image was removed or stat failed: %v", err)
@@ -432,4 +481,38 @@ func (r *scriptedRunner) Output(_ context.Context, name string, args ...string) 
 func commandKey(name string, args ...string) string {
 	values := append([]string{name}, args...)
 	return strings.Join(values, "\x00")
+}
+
+func withDownloadVMAssets(t *testing.T, fn func(context.Context, vm.AssetPaths, io.Writer) error) {
+	t.Helper()
+	previous := downloadVMAssets
+	downloadVMAssets = fn
+	t.Cleanup(func() {
+		downloadVMAssets = previous
+	})
+}
+
+func writeTestAssets(paths vm.AssetPaths) error {
+	publicKey := paths.SSHPublicKey
+	if publicKey == "" {
+		publicKey = filepath.Join(filepath.Dir(paths.SSHKey), "id_ed25519.pub")
+	}
+	for _, asset := range []struct {
+		path string
+		mode os.FileMode
+	}{
+		{path: paths.Image, mode: 0o644},
+		{path: paths.Kernel, mode: 0o644},
+		{path: paths.Initrd, mode: 0o644},
+		{path: paths.SSHKey, mode: 0o600},
+		{path: publicKey, mode: 0o644},
+	} {
+		if err := os.MkdirAll(filepath.Dir(asset.path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(asset.path, []byte("downloaded"), asset.mode); err != nil {
+			return err
+		}
+	}
+	return nil
 }

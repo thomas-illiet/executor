@@ -10,9 +10,14 @@ import (
 	"executor/internal/vm"
 )
 
+var downloadVMAssets = vm.DownloadAssets
+
 // init prepares the VM assets, starts QEMU, and configures rootless Podman.
 func (a App) init(ctx context.Context, manager vm.Manager, creds vm.Credentials) error {
 	if err := a.ensureMemory(); err != nil {
+		return err
+	}
+	if err := downloadVMAssets(ctx, a.assetPaths(), a.Out); err != nil {
 		return err
 	}
 	if err := a.ensureVMAssets(); err != nil {

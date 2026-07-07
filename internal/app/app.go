@@ -10,10 +10,10 @@ import (
 	"executor/internal/vm"
 )
 
-const (
-	CommandName = "podman"
-	Version     = "0.1.0"
-)
+const CommandName = "podman"
+
+// Version is overridden by release builds with -ldflags.
+var Version = "0.1.0"
 
 const localForwardCheckHost = "127.0.0.1"
 
