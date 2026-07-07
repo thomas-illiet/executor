@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -436,6 +437,89 @@ func TestProxyUsesCoderHomeWhenHostShareDisabled(t *testing.T) {
 	want := "cd '/home/coder' && 'env' 'XDG_RUNTIME_DIR=/run/user/1000' 'REGISTRY_AUTH_FILE=/home/coder/.config/containers/auth.json' 'TMPDIR=/run/user/1000' 'podman' 'ps'"
 	if command != want {
 		t.Fatalf("proxy command = %q, want %q", command, want)
+	}
+}
+
+// TestOpenForwardRejectsUDP verifies unsupported UDP mappings fail clearly.
+func TestOpenForwardRejectsUDP(t *testing.T) {
+	dir := t.TempDir()
+	runner := &recordingRunner{}
+	app := App{
+		Config: config.Config{SSHSocket: filepath.Join(dir, "executorssh.sock")},
+		Runner: runner,
+		Out:    io.Discard,
+	}
+	manager := vm.NewManager(app.Config, runner)
+
+	err := app.openForward(context.Background(), manager, container.Mapping{HostPort: 5353, Protocol: "udp"})
+	if err == nil || !strings.Contains(err.Error(), "SSH local forwarding supports TCP only") {
+		t.Fatalf("openForward() error = %v, want UDP rejection", err)
+	}
+	if len(runner.runs) != 0 {
+		t.Fatalf("runs = %#v, want no SSH command", runner.runs)
+	}
+}
+
+// TestOpenForwardDoesNotKillUnownedOccupiedPort verifies arbitrary listeners are left alone.
+func TestOpenForwardDoesNotKillUnownedOccupiedPort(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	dir := t.TempDir()
+	port := listener.Addr().(*net.TCPAddr).Port
+	runner := &recordingRunner{}
+	app := App{
+		Config: config.Config{SSHSocket: filepath.Join(dir, "executorssh.sock")},
+		Runner: runner,
+		Out:    io.Discard,
+	}
+	manager := vm.NewManager(app.Config, runner)
+
+	err = app.openForward(context.Background(), manager, container.Mapping{HostPort: port, Protocol: "tcp"})
+	if err == nil || !strings.Contains(err.Error(), "already used") {
+		t.Fatalf("openForward() error = %v, want occupied port error", err)
+	}
+	if len(runner.runs) != 0 {
+		t.Fatalf("runs = %#v, want no cleanup command for unowned port", runner.runs)
+	}
+}
+
+// TestOpenForwardStopsOwnedForwardBeforeReusingPort verifies owned control sockets are used.
+func TestOpenForwardStopsOwnedForwardBeforeReusingPort(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	dir := t.TempDir()
+	port := listener.Addr().(*net.TCPAddr).Port
+	runner := &recordingRunner{}
+	app := App{
+		Config: config.Config{SSHSocket: filepath.Join(dir, "executorssh.sock"), SSHUser: "coder"},
+		Runner: runner,
+		Out:    io.Discard,
+	}
+	mapping := container.Mapping{HostPort: port, Protocol: "tcp"}
+	controlPath := app.forwardControlPath(mapping)
+	if err := os.WriteFile(controlPath, []byte("owned"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager := vm.NewManager(app.Config, runner)
+
+	err = app.openForward(context.Background(), manager, mapping)
+	if err == nil || !strings.Contains(err.Error(), "already used") {
+		t.Fatalf("openForward() error = %v, want occupied port error after owned cleanup", err)
+	}
+	stopIndex := recordedRunIndexContaining(runner.runs, "-O")
+	if stopIndex == -1 || recordedRunIndexContaining(runner.runs, "exit") == -1 {
+		t.Fatalf("runs = %#v, want SSH control socket exit", runner.runs)
+	}
+	if recordedRunIndex(runner.runs, "pkill") != -1 {
+		t.Fatalf("runs = %#v, should not run pkill", runner.runs)
 	}
 }
 

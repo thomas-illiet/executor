@@ -140,7 +140,15 @@ func newUpCommand(c *cli) *cobra.Command {
 		DisableFlagParsing: true,
 		Args:               cobra.ArbitraryArgs,
 		RunE: func(command *cobra.Command, args []string) error {
-			return c.application.ExecuteContainer(command.Context(), containerCommandArgs("up", args))
+			return c.application.ExecuteContainer(command.Context(), composeUpCommandArgs(args))
 		},
 	}
+}
+
+// composeUpCommandArgs expands the executor shorthand into podman compose up.
+func composeUpCommandArgs(args []string) []string {
+	values := make([]string, 0, len(args)+2)
+	values = append(values, "compose", "up")
+	values = append(values, args...)
+	return values
 }

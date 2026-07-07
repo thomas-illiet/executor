@@ -167,6 +167,20 @@ func TestInternalCommandsRejectUnknownFlags(t *testing.T) {
 	}
 }
 
+// TestComposeUpCommandArgsExpandsShorthand verifies executor up proxies compose up.
+func TestComposeUpCommandArgsExpandsShorthand(t *testing.T) {
+	got := composeUpCommandArgs([]string{"-d", "--remove-orphans"})
+	want := []string{"compose", "up", "-d", "--remove-orphans"}
+	if len(got) != len(want) {
+		t.Fatalf("composeUpCommandArgs() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("composeUpCommandArgs()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 // newTestApp builds an App with test-safe defaults and injected streams.
 func newTestApp(runner *scriptedRunner, out io.Writer, errOut io.Writer) app.App {
 	return app.App{

@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"executor/internal/container"
 	"executor/internal/system"
@@ -78,8 +81,12 @@ func (a App) remoteWorkDir() string {
 
 // openForward creates a local SSH forward for a published port.
 func (a App) openForward(ctx context.Context, manager vm.Manager, mapping container.Mapping) error {
+	if mapping.Protocol != "" && mapping.Protocol != "tcp" {
+		return fmt.Errorf("port %d/%s cannot be forwarded: SSH local forwarding supports TCP only", mapping.HostPort, mapping.Protocol)
+	}
+	controlPath := a.forwardControlPath(mapping)
 	if container.IsOpen(localForwardCheckHost, mapping.HostPort) {
-		_ = a.Runner.Run(ctx, "pkill", "-f", fmt.Sprintf("0.0.0.0:%d:127.0.0.1:%d", mapping.HostPort, mapping.HostPort))
+		_ = a.stopOwnedForward(ctx, manager.SSH, controlPath)
 		if container.IsOpen(localForwardCheckHost, mapping.HostPort) {
 			return fmt.Errorf("port %d is already used", mapping.HostPort)
 		}
@@ -88,6 +95,33 @@ func (a App) openForward(ctx context.Context, manager vm.Manager, mapping contai
 	if mapping.IP != "" {
 		listenHost = mapping.IP
 	}
+	if err := os.MkdirAll(filepath.Dir(controlPath), 0o755); err != nil {
+		return err
+	}
+	_ = os.Remove(controlPath)
 	fmt.Fprintf(a.Out, "Forwarding %s:%d -> VM:%d/%s\n", hostLabel(mapping.IP), mapping.HostPort, mapping.HostPort, mapping.Protocol)
-	return manager.SSH.StartLocalForward(ctx, listenHost, mapping.HostPort, "127.0.0.1", mapping.HostPort)
+	return manager.SSH.StartLocalForward(ctx, listenHost, mapping.HostPort, "127.0.0.1", mapping.HostPort, controlPath)
+}
+
+// stopOwnedForward closes an executor-owned SSH forward when its control socket exists.
+func (a App) stopOwnedForward(ctx context.Context, ssh vm.SSHClient, controlPath string) error {
+	if _, err := os.Lstat(controlPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	err := ssh.StopLocalForward(ctx, controlPath)
+	_ = os.Remove(controlPath)
+	return err
+}
+
+// forwardControlPath returns the control socket path for a local forward.
+func (a App) forwardControlPath(mapping container.Mapping) string {
+	listenHost := "0.0.0.0"
+	if mapping.IP != "" {
+		listenHost = mapping.IP
+	}
+	safeHost := strings.NewReplacer(":", "_", "/", "_", "\\", "_", ".", "_").Replace(listenHost)
+	return filepath.Join(filepath.Dir(a.Config.SSHSocket), fmt.Sprintf("forward-%s-%d.sock", safeHost, mapping.HostPort))
 }

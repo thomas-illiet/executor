@@ -73,16 +73,29 @@ func (c SSHClient) Output(ctx context.Context, command string) ([]byte, error) {
 }
 
 // StartLocalForward starts an SSH local port forward in the background.
-func (c SSHClient) StartLocalForward(ctx context.Context, listenHost string, listenPort int, targetHost string, targetPort int) error {
+func (c SSHClient) StartLocalForward(ctx context.Context, listenHost string, listenPort int, targetHost string, targetPort int, controlPath string) error {
 	args := c.baseArgs(false)
 	args = append(args,
 		"-f",
 		"-N",
+		"-M",
+		"-S", controlPath,
 		"-o", "ExitOnForwardFailure=yes",
 		"-L", fmt.Sprintf("%s:%d:%s:%d", listenHost, listenPort, targetHost, targetPort),
 		c.destination(),
 	)
 	return c.Runner.Run(ctx, "sh", "-c", system.Join(append([]string{"ssh"}, args...))+" </dev/null >/dev/null 2>/dev/null")
+}
+
+// StopLocalForward asks an executor-owned SSH master process to close.
+func (c SSHClient) StopLocalForward(ctx context.Context, controlPath string) error {
+	args := c.baseArgs(false)
+	args = append(args,
+		"-S", controlPath,
+		"-O", "exit",
+		c.destination(),
+	)
+	return c.Runner.Run(ctx, "ssh", args...)
 }
 
 // Endpoint returns a display label for the SSH transport.

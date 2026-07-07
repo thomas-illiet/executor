@@ -52,7 +52,7 @@ func TestStartLocalForwardDetachesSSHStdio(t *testing.T) {
 		Runner:     runner,
 	}
 
-	if err := client.StartLocalForward(context.Background(), "0.0.0.0", 8080, "127.0.0.1", 80); err != nil {
+	if err := client.StartLocalForward(context.Background(), "0.0.0.0", 8080, "127.0.0.1", 80, "/tmp/forward.sock"); err != nil {
 		t.Fatal(err)
 	}
 	if runner.name != "sh" {
@@ -66,6 +66,8 @@ func TestStartLocalForwardDetachesSSHStdio(t *testing.T) {
 		"'ssh'",
 		"'-f'",
 		"'-N'",
+		"'-M'",
+		"'-S' '/tmp/forward.sock'",
 		"'-L' '0.0.0.0:8080:127.0.0.1:80'",
 		"'coder@localhost'",
 		"</dev/null >/dev/null 2>/dev/null",
@@ -73,6 +75,30 @@ func TestStartLocalForwardDetachesSSHStdio(t *testing.T) {
 		if !strings.Contains(command, fragment) {
 			t.Fatalf("command %q does not contain %q", command, fragment)
 		}
+	}
+}
+
+// TestStopLocalForwardUsesControlSocket verifies only owned forwards are stopped.
+func TestStopLocalForwardUsesControlSocket(t *testing.T) {
+	runner := &sshRecordingRunner{}
+	client := SSHClient{
+		SocketPath: "/tmp/executor.sock",
+		User:       "coder",
+		KeyPath:    "/tmp/key",
+		Runner:     runner,
+	}
+
+	if err := client.StopLocalForward(context.Background(), "/tmp/forward.sock"); err != nil {
+		t.Fatal(err)
+	}
+	if runner.name != "ssh" {
+		t.Fatalf("command = %q, want ssh", runner.name)
+	}
+	if !containsArgPair(runner.args, "-S", "/tmp/forward.sock") {
+		t.Fatalf("args = %#v, want control socket", runner.args)
+	}
+	if !containsArgPair(runner.args, "-O", "exit") {
+		t.Fatalf("args = %#v, want exit control command", runner.args)
 	}
 }
 
