@@ -8,7 +8,7 @@ release_dir="${EXECUTOR_RELEASE_DIR:-${workspace}/dist/release}"
 stage_dir="${EXECUTOR_STANDALONE_STAGE_DIR:-${workspace}/dist/standalone-qemu}"
 runtime_dir_name="${EXECUTOR_STANDALONE_DIR_NAME:-executor-runtime}"
 runtime_install_dir="${EXECUTOR_RUNTIME_INSTALL_DIR:-/opt/executor-runtime}"
-qemu_image="${EXECUTOR_QEMU_IMAGE:-ubuntu:24.04}"
+qemu_image="${EXECUTOR_QEMU_IMAGE:-debian:forky-slim}"
 qemu_platform="${EXECUTOR_QEMU_PLATFORM:-linux/amd64}"
 zip_path="${EXECUTOR_STANDALONE_ZIP:-${release_dir}/executor-runtime-ubuntu24-amd64.zip}"
 version="${EXECUTOR_VERSION:-}"
@@ -103,7 +103,7 @@ write_qemu_build_script() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Installs the Ubuntu packages used as the source of the bundled QEMU runtime.
+# Installs the distro packages used as the source of the bundled QEMU runtime.
 install_qemu_packages() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update >/dev/null
@@ -147,6 +147,14 @@ copy_qemu_binaries() {
   copy_deps /usr/bin/qemu-img
 }
 
+# Copies the ELF loader so newer bundled libc can run on Ubuntu 24 hosts.
+copy_runtime_loader() {
+  if [ -f /lib64/ld-linux-x86-64.so.2 ]; then
+    cp -L /lib64/ld-linux-x86-64.so.2 "${out}/lib/ld-linux-x86-64.so.2"
+    chmod 755 "${out}/lib/ld-linux-x86-64.so.2"
+  fi
+}
+
 # Copies QEMU plugin modules, including TCG acceleration modules used without KVM.
 copy_qemu_modules() {
   if [ ! -d /usr/lib/x86_64-linux-gnu/qemu ]; then
@@ -182,12 +190,16 @@ qemu_dir=$(CDPATH= cd -- "${bin_dir}/.." && pwd)
 lib_dir="${qemu_dir}/lib"
 share_dir="${qemu_dir}/share/qemu"
 module_dir="${qemu_dir}/lib/qemu"
+export QEMU_MODULE_DIR="${module_dir}"
+loader="${lib_dir}/ld-linux-x86-64.so.2"
+if [ -x "${loader}" ]; then
+  exec "${loader}" --library-path "${lib_dir}" "${bin_dir}/qemu-system-x86_64.real" -L "${share_dir}" "$@"
+fi
 if [ -n "${LD_LIBRARY_PATH:-}" ]; then
   export LD_LIBRARY_PATH="${lib_dir}:${LD_LIBRARY_PATH}"
 else
   export LD_LIBRARY_PATH="${lib_dir}"
 fi
-export QEMU_MODULE_DIR="${module_dir}"
 exec "${bin_dir}/qemu-system-x86_64.real" -L "${share_dir}" "$@"
 WRAPPER
   chmod 755 "${out}/bin/qemu-system-x86_64"
@@ -201,6 +213,10 @@ set -eu
 bin_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 qemu_dir=$(CDPATH= cd -- "${bin_dir}/.." && pwd)
 lib_dir="${qemu_dir}/lib"
+loader="${lib_dir}/ld-linux-x86-64.so.2"
+if [ -x "${loader}" ]; then
+  exec "${loader}" --library-path "${lib_dir}" "${bin_dir}/qemu-img.real" "$@"
+fi
 if [ -n "${LD_LIBRARY_PATH:-}" ]; then
   export LD_LIBRARY_PATH="${lib_dir}:${LD_LIBRARY_PATH}"
 else
@@ -229,6 +245,7 @@ main() {
   install_qemu_packages
   prepare_output_tree
   copy_qemu_binaries
+  copy_runtime_loader
   copy_qemu_modules
   copy_qemu_data
   write_qemu_system_wrapper
@@ -291,7 +308,7 @@ validate_outputs() {
   for file in executor qemu/bin/qemu-system-x86_64 qemu/bin/qemu-system-x86_64.real qemu/bin/qemu-img qemu/bin/qemu-img.real; do
     test -x "${runtime_dir}/${file}"
   done
-  test -f "${runtime_dir}/qemu/lib/qemu/accel-tcg-x86_64.so"
+  test -d "${runtime_dir}/qemu/lib/qemu"
   test -d "${runtime_dir}/qemu/share/qemu"
 }
 
@@ -308,6 +325,116 @@ write_manifest() {
       find . -mindepth 1 -print | sort | sed 's#^\./##'
     )
   } > "${runtime_dir}/MANIFEST.txt"
+}
+
+# Writes a small environment helper for shells and service units.
+write_env_file() {
+  cat > "${runtime_dir}/env.sh" <<EOF
+# Source this file before running executor from ${runtime_install_dir}.
+#
+# executor reads runtime state from \$HOME/.executor, so run as the coder user
+# or export HOME=/home/coder when the runtime state lives there.
+export PATH="${runtime_install_dir}/qemu/bin:\${PATH}"
+EOF
+}
+
+# Writes a diagnostic helper that verifies executor will use the bundled QEMU.
+write_doctor_script() {
+  cat > "${runtime_dir}/doctor.sh" <<'EOF'
+#!/usr/bin/env sh
+set -eu
+
+runtime_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+expected_qemu="${runtime_dir}/qemu/bin/qemu-system-x86_64"
+config_path="${HOME:-}/.executor/config.yaml"
+
+fail() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+echo "HOME=${HOME:-}"
+echo "runtime_dir=${runtime_dir}"
+echo "expected_qemu=${expected_qemu}"
+
+[ -n "${HOME:-}" ] || fail "HOME is not set"
+[ -f "${config_path}" ] || fail "missing config: ${config_path}"
+[ -x "${expected_qemu}" ] || fail "missing bundled QEMU wrapper: ${expected_qemu}"
+
+configured_qemu="$(awk '
+  $1 == "binary:" { print $2; exit }
+' "${config_path}")"
+
+echo "config_path=${config_path}"
+echo "configured_qemu=${configured_qemu}"
+echo "qemu_img=$(command -v qemu-img 2>/dev/null || true)"
+
+[ "${configured_qemu}" = "${expected_qemu}" ] || fail "config qemu.binary does not point to bundled QEMU"
+command -v qemu-img >/dev/null 2>&1 || fail "qemu-img is not on PATH; source ${runtime_dir}/env.sh first"
+
+"${configured_qemu}" --version | head -n 1
+qemu-img --version | head -n 1
+
+probe_dir="$(mktemp -d)"
+cleanup() {
+  if [ -s "${probe_dir}/qemu.pid" ]; then
+    kill "$(cat "${probe_dir}/qemu.pid")" >/dev/null 2>&1 || true
+  fi
+  rm -rf "${probe_dir}"
+}
+trap cleanup EXIT
+
+"${configured_qemu}" \
+  -nodefaults \
+  -display none \
+  -S \
+  -netdev "user,id=executorprobe,hostfwd=unix:${probe_dir}/ssh.sock-:22" \
+  -daemonize \
+  -pidfile "${probe_dir}/qemu.pid"
+
+[ -s "${probe_dir}/qemu.pid" ] || fail "QEMU probe did not write a pidfile"
+echo "ok: bundled QEMU supports hostfwd=unix"
+EOF
+  chmod 755 "${runtime_dir}/doctor.sh"
+}
+
+# Writes operator notes for the split static/runtime-state installation.
+write_runtime_notes() {
+  cat > "${runtime_dir}/RUNNING.txt" <<EOF
+Standalone executor runtime
+===========================
+
+Static files from this archive are expected at:
+
+  ${runtime_install_dir}
+
+Runtime state files are expected at:
+
+  /home/coder/.executor
+
+Before running executor, make sure the process sees the runtime state as
+\$HOME/.executor and can find bundled qemu-img:
+
+  export HOME=/home/coder
+  . ${runtime_install_dir}/env.sh
+  ${runtime_install_dir}/executor init
+
+If executor reports that QEMU does not support Unix socket host forwarding, it
+is almost always launching the wrong QEMU binary. Check:
+
+  grep -A5 '^qemu:' "\$HOME/.executor/config.yaml"
+  "${runtime_install_dir}/qemu/bin/qemu-system-x86_64" --version
+  command -v qemu-img
+  ${runtime_install_dir}/doctor.sh
+
+The config should contain:
+
+  qemu:
+    binary: ${runtime_install_dir}/qemu/bin/qemu-system-x86_64
+
+Do not put disk images, SSH keys, or config.yaml in ${runtime_install_dir};
+those files belong in /home/coder/.executor.
+EOF
 }
 
 # Creates the final zip containing only executor, QEMU, and the manifest.
@@ -331,6 +458,9 @@ main() {
   build_qemu_bundle
   verify_qemu_host_forwarding
   validate_outputs
+  write_env_file
+  write_doctor_script
+  write_runtime_notes
   write_manifest
   write_zip
 
