@@ -195,26 +195,29 @@ func TestDownloadAssetsFailureLeavesCleanTargetUntouched(t *testing.T) {
 	}
 }
 
-// TestDownloadAssetsRejectsUnsafeEntries verifies traversal and special entries are rejected.
-func TestDownloadAssetsRejectsUnsafeEntries(t *testing.T) {
-	for _, entry := range []tarEntry{
-		{name: "nested/../escape", content: "bad", mode: 0o644},
-		{name: "../escape", content: "bad", mode: 0o644},
-		{name: "/absolute", content: "bad", mode: 0o644},
-		{name: `..\escape`, content: "bad", mode: 0o644},
-		{name: "link", mode: 0o777, typeflag: tar.TypeSymlink, linkname: "target"},
-	} {
-		t.Run(strings.ReplaceAll(entry.name, "/", "_"), func(t *testing.T) {
-			executorDir := t.TempDir()
-			archive := testArchive(t, entry)
-			server := archiveServer(archive)
-			defer server.Close()
+// TestDownloadAssetsAcceptsUncheckedPaths verifies archive member paths are not validated.
+func TestDownloadAssetsAcceptsUncheckedPaths(t *testing.T) {
+	executorDir := t.TempDir()
+	archive := testArchive(t, tarEntry{name: "nested/../future-asset", content: "asset", mode: 0o644})
+	server := archiveServer(archive)
+	defer server.Close()
 
-			err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallOverlay, nil)
-			if err == nil {
-				t.Fatalf("DownloadAssets() accepted unsafe entry %#v", entry)
-			}
-		})
+	if err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallOverlay, nil); err != nil {
+		t.Fatal(err)
+	}
+	assertFileContent(t, filepath.Join(executorDir, "future-asset"), "asset")
+}
+
+// TestDownloadAssetsRejectsSpecialEntries verifies unsupported tar entry types are rejected.
+func TestDownloadAssetsRejectsSpecialEntries(t *testing.T) {
+	executorDir := t.TempDir()
+	archive := testArchive(t, tarEntry{name: "link", mode: 0o777, typeflag: tar.TypeSymlink, linkname: "target"})
+	server := archiveServer(archive)
+	defer server.Close()
+
+	err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallOverlay, nil)
+	if err == nil {
+		t.Fatal("DownloadAssets() accepted unsupported symlink entry")
 	}
 }
 

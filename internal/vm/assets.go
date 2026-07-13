@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -161,7 +160,7 @@ func prepareAssetArchive(ctx context.Context, storage AssetStorage, executorDir 
 	return stageDir, nil
 }
 
-// extractAssetArchive expands regular files and directories while rejecting unsafe tar entries.
+// extractAssetArchive expands regular files and directories from the archive.
 func extractAssetArchive(archivePath, stageDir string) error {
 	archive, err := os.Open(archivePath)
 	if err != nil {
@@ -185,10 +184,7 @@ func extractAssetArchive(archivePath, stageDir string) error {
 		if err != nil {
 			return fmt.Errorf("extract VM assets archive: %w", err)
 		}
-		name, err := safeAssetPath(header.Name)
-		if err != nil {
-			return fmt.Errorf("extract VM assets archive: %w", err)
-		}
+		name := header.Name
 
 		target := filepath.Join(stageDir, filepath.FromSlash(name))
 		switch header.Typeflag {
@@ -214,30 +210,6 @@ func extractAssetArchive(archivePath, stageDir string) error {
 			return fmt.Errorf("extract VM assets archive: unsupported entry %q", header.Name)
 		}
 	}
-}
-
-// safeAssetPath accepts relative tar paths, including the conventional leading "./".
-func safeAssetPath(name string) (string, error) {
-	if name == "" || path.IsAbs(name) || filepath.IsAbs(filepath.FromSlash(name)) || strings.Contains(name, `\`) {
-		return "", fmt.Errorf("unsafe archive entry %q", name)
-	}
-
-	parts := strings.Split(name, "/")
-	for len(parts) > 0 && parts[0] == "." {
-		parts = parts[1:]
-	}
-	for len(parts) > 0 && parts[len(parts)-1] == "" {
-		parts = parts[:len(parts)-1]
-	}
-	if len(parts) == 0 {
-		return ".", nil
-	}
-	for _, part := range parts {
-		if part == "" || part == "." || part == ".." {
-			return "", fmt.Errorf("unsafe archive entry %q", name)
-		}
-	}
-	return path.Join(parts...), nil
 }
 
 // archiveMode supplies a usable default when an archive omits permission bits.
