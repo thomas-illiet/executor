@@ -63,13 +63,18 @@ extract_bundle() {
   test -x "${temp_dir}/${runtime_dir_name}/qemu/bin/qemu-system-x86_64" || fail "bundle does not contain QEMU"
 }
 
-# Starts an untouched Ubuntu container with no package installation step.
+# Starts an untouched Ubuntu container with no package installation or Linux
+# capabilities. The runtime user also cannot gain privileges.
 start_vanilla_container() {
   log "Starting vanilla ${test_image} container"
   docker rm -f "${container_name}" >/dev/null 2>&1 || true
   docker create \
     --name "${container_name}" \
     --platform "${test_platform}" \
+    --user 1000:1000 \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --tmpfs /home/coder:rw,nosuid,nodev,uid=1000,gid=1000,mode=700 \
     --env HOME=/home/coder \
     "${test_image}" \
     sleep infinity \
@@ -80,13 +85,20 @@ start_vanilla_container() {
 # Copies the archive contents and mutable runtime state into the vanilla container.
 install_runtime() {
   runtime_parent="$(dirname -- "${runtime_install_dir}")"
+  staged_assets_dir="${temp_dir}/runtime-assets"
   log "Copying Executor and bundled QEMU to ${runtime_install_dir}"
-  docker exec "${container_name}" mkdir -p "${runtime_parent}" /home/coder/.executor
+  mkdir -p "${staged_assets_dir}"
+  docker exec --user 0:0 "${container_name}" mkdir -p "${runtime_parent}" /tmp/executor-assets
   docker cp "${temp_dir}/${runtime_dir_name}" "${container_name}:${runtime_install_dir}"
+  docker exec --user 1000:1000 "${container_name}" mkdir -p /home/coder/.executor
   for asset in config.yaml system.qcow2 vmlinuz-virt initramfs-virt id_ed25519 id_ed25519.pub; do
-    docker cp "${assets_dir}/${asset}" "${container_name}:/home/coder/.executor/${asset}"
+    cp "${assets_dir}/${asset}" "${staged_assets_dir}/${asset}"
+    chmod 0644 "${staged_assets_dir}/${asset}"
+    docker cp "${staged_assets_dir}/${asset}" "${container_name}:/tmp/executor-assets/${asset}"
+    docker exec --user 1000:1000 "${container_name}" \
+      cp "/tmp/executor-assets/${asset}" "/home/coder/.executor/${asset}"
   done
-  docker exec "${container_name}" chown -R 1000:1000 /home/coder
+  docker exec --user 1000:1000 "${container_name}" chmod 0600 /home/coder/.executor/id_ed25519
 }
 
 # Runs a raw command in the container with the expected HOME.
@@ -105,6 +117,20 @@ runtime_exec() {
     "${container_name}" \
     sh -c '. "$1/env.sh"; shift; exec "$@"' \
     sh "${runtime_install_dir}" "$@"
+}
+
+# Proves the tested runtime has no inheritable, permitted, effective, bounding,
+# or ambient capabilities and cannot gain new privileges.
+verify_sandbox() {
+  runtime_exec sh -c '
+    grep -E "^(CapInh|CapPrm|CapEff|CapBnd|CapAmb|NoNewPrivs):" /proc/self/status
+    for field in CapInh CapPrm CapEff CapBnd CapAmb; do
+      value=$(sed -n "s/^${field}:[[:space:]]*//p" /proc/self/status)
+      [ "${value}" = "0000000000000000" ] || exit 1
+    done
+    grep -Eq "^NoNewPrivs:[[:space:]]*1$" /proc/self/status
+  ' || fail "runtime still has a Linux capability or can gain privileges"
+  log "ok: runtime has zero Linux capabilities and NoNewPrivs=1"
 }
 
 # Proves the base image contributes no QEMU and the bundled probe succeeds.
@@ -190,6 +216,7 @@ main() {
   extract_bundle
   start_vanilla_container
   install_runtime
+  verify_sandbox
   verify_doctor
   verify_executor_boot
   log "ok: standalone Executor plus QEMU works in vanilla ${test_image}"
