@@ -208,16 +208,47 @@ func TestDownloadAssetsAcceptsUncheckedPaths(t *testing.T) {
 	assertFileContent(t, filepath.Join(executorDir, "future-asset"), "asset")
 }
 
-// TestDownloadAssetsRejectsSpecialEntries verifies unsupported tar entry types are rejected.
-func TestDownloadAssetsRejectsSpecialEntries(t *testing.T) {
+// TestDownloadAssetsInstallsSymbolicLinks verifies archive symlinks remain symlinks after installation.
+func TestDownloadAssetsInstallsSymbolicLinks(t *testing.T) {
 	executorDir := t.TempDir()
-	archive := testArchive(t, tarEntry{name: "link", mode: 0o777, typeflag: tar.TypeSymlink, linkname: "target"})
+	archive := testArchive(t,
+		tarEntry{name: "lib/target.so.1", content: "library", mode: 0o644},
+		tarEntry{name: "lib/target.so", mode: 0o777, typeflag: tar.TypeSymlink, linkname: "target.so.1"},
+	)
+	server := archiveServer(archive)
+	defer server.Close()
+
+	if err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallOverlay, nil); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(executorDir, "lib", "target.so")
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("%s mode = %v, want symbolic link", link, info.Mode())
+	}
+	linkTarget, err := os.Readlink(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linkTarget != "target.so.1" {
+		t.Fatalf("%s target = %q, want %q", link, linkTarget, "target.so.1")
+	}
+	assertFileContent(t, link, "library")
+}
+
+// TestDownloadAssetsRejectsUnsupportedEntries verifies other special tar entries stay unsupported.
+func TestDownloadAssetsRejectsUnsupportedEntries(t *testing.T) {
+	executorDir := t.TempDir()
+	archive := testArchive(t, tarEntry{name: "pipe", mode: 0o644, typeflag: tar.TypeFifo})
 	server := archiveServer(archive)
 	defer server.Close()
 
 	err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallOverlay, nil)
-	if err == nil {
-		t.Fatal("DownloadAssets() accepted unsupported symlink entry")
+	if err == nil || !strings.Contains(err.Error(), "unsupported entry") {
+		t.Fatalf("DownloadAssets() error = %v, want unsupported entry", err)
 	}
 }
 

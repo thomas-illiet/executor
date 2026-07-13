@@ -206,6 +206,19 @@ func extractAssetArchive(archivePath, stageDir string) error {
 			if err := extractAssetFile(tarReader, target, header.FileInfo().Mode().Perm()); err != nil {
 				return fmt.Errorf("extract VM assets archive %s: %w", name, err)
 			}
+		case tar.TypeSymlink:
+			if name == "." {
+				return fmt.Errorf("extract VM assets archive: unsupported entry %q", header.Name)
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return fmt.Errorf("extract VM assets archive %s: %w", name, err)
+			}
+			if err := os.RemoveAll(target); err != nil {
+				return fmt.Errorf("extract VM assets archive %s: %w", name, err)
+			}
+			if err := os.Symlink(filepath.FromSlash(header.Linkname), target); err != nil {
+				return fmt.Errorf("extract VM assets archive %s: %w", name, err)
+			}
 		default:
 			return fmt.Errorf("extract VM assets archive: unsupported entry %q", header.Name)
 		}
@@ -287,8 +300,14 @@ func installPreparedAssets(stageDir, executorDir string, mode AssetInstallMode) 
 			directoryModes[target] = archiveMode(info.Mode().Perm(), 0o755)
 			return nil
 		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			if err := ensureInstallDirectory(executorDir, filepath.Dir(relative)); err != nil {
+				return err
+			}
+			return copyPreparedSymlink(source, target, filepath.Dir(target))
+		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("prepared asset %q is not a regular file", relative)
+			return fmt.Errorf("prepared asset %q is not a regular file or symbolic link", relative)
 		}
 		if err := ensureInstallDirectory(executorDir, filepath.Dir(relative)); err != nil {
 			return err
@@ -374,6 +393,31 @@ func copyPreparedAsset(source, target, executorDir string) error {
 		return err
 	}
 	return nil
+}
+
+// copyPreparedSymlink replaces one destination with the staged symbolic link.
+func copyPreparedSymlink(source, target, executorDir string) error {
+	linkTarget, err := os.Readlink(source)
+	if err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(executorDir, ".asset-link-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	if err := temp.Close(); err != nil {
+		os.Remove(tempPath)
+		return err
+	}
+	if err := os.Remove(tempPath); err != nil {
+		return err
+	}
+	defer os.Remove(tempPath)
+	if err := os.Symlink(linkTarget, tempPath); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, target)
 }
 
 // buildAssetArchiveURL joins the configured server, remote folder, and archive name.
