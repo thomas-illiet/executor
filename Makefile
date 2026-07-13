@@ -15,6 +15,11 @@ CONTAINER_NAME ?= qemu-podman-proxy
 VM_ASSETS_DIR ?= dist/output
 VM_SMOKE_ASSETS_DIR ?= .local/vm-secure-smoke-assets
 VM_CONFIG_FILE ?= $(VM_ASSETS_DIR)/config.yaml
+STANDALONE_RUNTIME_DIR ?= /opt/executor-runtime
+STANDALONE_ZIP ?= dist/release/executor-runtime-ubuntu24-amd64.zip
+STANDALONE_QEMU_IMAGE ?= debian:forky-slim
+STANDALONE_TEST_IMAGE ?= ubuntu:24.04
+STANDALONE_BOOT_TIMEOUT ?= 20s
 VM_ASSET_FILES := $(VM_ASSETS_DIR)/system.qcow2 $(VM_ASSETS_DIR)/vmlinuz-virt $(VM_ASSETS_DIR)/initramfs-virt $(VM_ASSETS_DIR)/id_ed25519 $(VM_ASSETS_DIR)/id_ed25519.pub
 
 # Host container run commands are intentionally pinned to x64. The local tooling
@@ -31,7 +36,7 @@ KVM_ARGS ?= $(shell test -e /dev/kvm && echo --device /dev/kvm)
 SECURE_RUN_ARGS ?= --read-only --user coder:coder --cap-drop ALL --security-opt no-new-privileges
 SECURE_TMPFS_ARGS ?= --tmpfs /home/coder:rw,nosuid,nodev,uid=1000,gid=1000,mode=700,size=8g --tmpfs /tmp:rw,nosuid,nodev,uid=1000,gid=1000,mode=1777,size=1g --tmpfs /run:rw,nosuid,nodev,uid=1000,gid=1000,mode=755,size=64m
 
-.PHONY: build test tidy clean docker-tooling-build docker-build docker-smoke docker-shell vm-asset-ready vm-asset vm-config vm-init vm-serve vm-exec vm-shutdown vm-secure-smoke help
+.PHONY: build test tidy clean docker-tooling-build docker-build docker-smoke docker-shell vm-asset-ready vm-asset vm-config standalone-qemu-zip standalone-qemu-smoke vm-init vm-serve vm-exec vm-shutdown vm-secure-smoke help
 
 ##@ Local development
 
@@ -107,6 +112,25 @@ vm-config: ## Create an optional mounted executor config when explicitly request
 		echo "Executor config already present in $(VM_CONFIG_FILE)."; \
 	fi
 
+standalone-qemu-zip: ## Build executor plus bundled QEMU zip; VM data stays in VM_ASSETS_DIR.
+	WORKSPACE="$(WORKSPACE)" \
+	GO="$(GO)" \
+	VM_ASSETS_DIR="$(abspath $(VM_ASSETS_DIR))" \
+	EXECUTOR_RUNTIME_INSTALL_DIR="$(STANDALONE_RUNTIME_DIR)" \
+	EXECUTOR_STANDALONE_ZIP="$(abspath $(STANDALONE_ZIP))" \
+	EXECUTOR_QEMU_IMAGE="$(STANDALONE_QEMU_IMAGE)" \
+	EXECUTOR_QEMU_TEST_IMAGE="$(STANDALONE_TEST_IMAGE)" \
+	./scripts/build-standalone-qemu.sh
+
+standalone-qemu-smoke: standalone-qemu-zip ## Copy the final bundle into vanilla Ubuntu 24 and launch executor.
+	WORKSPACE="$(WORKSPACE)" \
+	VM_ASSETS_DIR="$(abspath $(VM_ASSETS_DIR))" \
+	EXECUTOR_RUNTIME_INSTALL_DIR="$(STANDALONE_RUNTIME_DIR)" \
+	EXECUTOR_STANDALONE_ZIP="$(abspath $(STANDALONE_ZIP))" \
+	EXECUTOR_STANDALONE_TEST_IMAGE="$(STANDALONE_TEST_IMAGE)" \
+	EXECUTOR_STANDALONE_BOOT_TIMEOUT="$(STANDALONE_BOOT_TIMEOUT)" \
+	./scripts/test-standalone-qemu-ubuntu.sh
+
 ##@ VM container workflow
 
 vm-init: ## Initialize QEMU and rootless Podman inside the running VM container.
@@ -160,4 +184,4 @@ help: ## Show available targets and common override variables.
 		printf "Usage:\n  make <target> [VAR=value]\n\nTargets:\n"} \
 		/^##@ / {printf "\n%s\n", substr($$0, 5)} \
 		/^[A-Za-z0-9_.-]+:.*## / {printf "  %-24s %s\n", $$1, $$2} \
-		END {printf "\nCommon variables:\n  GO=%s\n  BINARY=%s\n  DOCKERFILE=%s\n  PLATFORM=%s\n  IMAGE=%s\n  TOOLING_IMAGE=%s\n  WORKSPACE=%s\n  VM_ASSETS_DIR=%s\n  VM_SMOKE_ASSETS_DIR=%s\n  COMPOSE_FILE=%s\n  COMPOSE_SERVICE=%s\n  CONTAINER_NAME=%s\n  CONTAINER_PORTS=%s\n", "$(GO)", "$(BINARY)", "$(DOCKERFILE)", "$(PLATFORM)", "$(IMAGE)", "$(TOOLING_IMAGE)", "$(WORKSPACE)", "$(VM_ASSETS_DIR)", "$(VM_SMOKE_ASSETS_DIR)", "$(COMPOSE_FILE)", "$(COMPOSE_SERVICE)", "$(CONTAINER_NAME)", "$(CONTAINER_PORTS)"}' $(MAKEFILE_LIST)
+		END {printf "\nCommon variables:\n  GO=%s\n  BINARY=%s\n  DOCKERFILE=%s\n  PLATFORM=%s\n  IMAGE=%s\n  TOOLING_IMAGE=%s\n  WORKSPACE=%s\n  VM_ASSETS_DIR=%s\n  VM_SMOKE_ASSETS_DIR=%s\n  STANDALONE_RUNTIME_DIR=%s\n  STANDALONE_ZIP=%s\n  STANDALONE_QEMU_IMAGE=%s\n  STANDALONE_TEST_IMAGE=%s\n  STANDALONE_BOOT_TIMEOUT=%s\n  COMPOSE_FILE=%s\n  COMPOSE_SERVICE=%s\n  CONTAINER_NAME=%s\n  CONTAINER_PORTS=%s\n", "$(GO)", "$(BINARY)", "$(DOCKERFILE)", "$(PLATFORM)", "$(IMAGE)", "$(TOOLING_IMAGE)", "$(WORKSPACE)", "$(VM_ASSETS_DIR)", "$(VM_SMOKE_ASSETS_DIR)", "$(STANDALONE_RUNTIME_DIR)", "$(STANDALONE_ZIP)", "$(STANDALONE_QEMU_IMAGE)", "$(STANDALONE_TEST_IMAGE)", "$(STANDALONE_BOOT_TIMEOUT)", "$(COMPOSE_FILE)", "$(COMPOSE_SERVICE)", "$(CONTAINER_NAME)", "$(CONTAINER_PORTS)"}' $(MAKEFILE_LIST)

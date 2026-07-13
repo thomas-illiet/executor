@@ -10,6 +10,7 @@ runtime_dir_name="${EXECUTOR_STANDALONE_DIR_NAME:-executor-runtime}"
 runtime_install_dir="${EXECUTOR_RUNTIME_INSTALL_DIR:-/opt/executor-runtime}"
 qemu_image="${EXECUTOR_QEMU_IMAGE:-debian:forky-slim}"
 qemu_platform="${EXECUTOR_QEMU_PLATFORM:-linux/amd64}"
+qemu_test_image="${EXECUTOR_QEMU_TEST_IMAGE:-ubuntu:24.04}"
 zip_path="${EXECUTOR_STANDALONE_ZIP:-${release_dir}/executor-runtime-ubuntu24-amd64.zip}"
 version="${EXECUTOR_VERSION:-}"
 
@@ -259,7 +260,7 @@ EOF
   chmod 755 "${qemu_build_script}"
 }
 
-# Runs Ubuntu in Docker to produce the bundled QEMU directory.
+# Runs the source image in Docker to produce the bundled QEMU directory.
 build_qemu_bundle() {
   log "Building bundled QEMU from ${qemu_image}"
   write_qemu_build_script
@@ -274,13 +275,15 @@ build_qemu_bundle() {
 
 # Proves the bundled QEMU supports the Unix socket forwarding executor requires.
 verify_qemu_host_forwarding() {
-  log "Verifying bundled QEMU Unix socket forwarding"
+  log "Verifying bundled QEMU in vanilla ${qemu_test_image}"
   docker run --rm --platform "${qemu_platform}" \
     -v "${runtime_dir}:${runtime_install_dir}:ro" \
-    "${qemu_image}" \
+    "${qemu_test_image}" \
     bash -s -- "${runtime_install_dir}" <<'EOF'
 set -euo pipefail
 runtime_dir="$1"
+test ! -e /usr/bin/qemu-system-x86_64
+test ! -e /usr/bin/qemu-img
 probe_dir="$(mktemp -d)"
 cleanup() {
   if [ -s "${probe_dir}/qemu.pid" ]; then
@@ -374,6 +377,16 @@ command -v qemu-img >/dev/null 2>&1 || fail "qemu-img is not on PATH; source ${r
 
 "${configured_qemu}" --version | head -n 1
 qemu-img --version | head -n 1
+if [ -x "${runtime_dir}/qemu/lib/ld-linux-x86-64.so.2" ]; then
+  "${runtime_dir}/qemu/lib/ld-linux-x86-64.so.2" \
+    --library-path "${runtime_dir}/qemu/lib" \
+    --list "${runtime_dir}/qemu/bin/qemu-system-x86_64.real" \
+    | awk '/libslirp/ { print "libslirp=" $3; found=1 } END { exit found ? 0 : 1 }'
+else
+  LD_LIBRARY_PATH="${runtime_dir}/qemu/lib" \
+    ldd "${runtime_dir}/qemu/bin/qemu-system-x86_64.real" \
+    | awk '/libslirp/ { print "libslirp=" $3; found=1 } END { exit found ? 0 : 1 }'
+fi
 
 probe_dir="$(mktemp -d)"
 cleanup() {
