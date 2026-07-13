@@ -19,6 +19,8 @@ const (
 	defaultPodmanStorageDriver  = "overlay"
 	defaultPodmanRegistryMirror = ""
 	defaultGuestUser            = "coder"
+	defaultStorageURL           = "https://example.invalid"
+	defaultStorageFolder        = "executor-vm-assets"
 	configFileName              = "config.yaml"
 )
 
@@ -30,6 +32,8 @@ type Config struct {
 	PodmanDiskSize       string
 	PodmanStorageDriver  string
 	PodmanRegistryMirror string
+	StorageURL           string
+	StorageFolder        string
 	VMImage              string
 	KernelImage          string
 	InitrdImage          string
@@ -58,6 +62,7 @@ type fileConfig struct {
 	HostShare string         `yaml:"host_share" mapstructure:"host_share"`
 	GuestArch string         `yaml:"guest_arch" mapstructure:"guest_arch"`
 	Podman    podmanConfig   `yaml:"podman" mapstructure:"podman"`
+	Storage   storageConfig  `yaml:"storage" mapstructure:"storage"`
 	Timeouts  timeoutsConfig `yaml:"timeouts" mapstructure:"timeouts"`
 }
 
@@ -77,6 +82,11 @@ type podmanConfig struct {
 	DiskImage      string `yaml:"disk_image" mapstructure:"disk_image"`
 	DiskSize       string `yaml:"disk_size" mapstructure:"disk_size"`
 	StorageDriver  string `yaml:"storage_driver" mapstructure:"storage_driver"`
+}
+
+type storageConfig struct {
+	URL    string `yaml:"url" mapstructure:"url"`
+	Folder string `yaml:"folder" mapstructure:"folder"`
 }
 
 type timeoutsConfig struct {
@@ -145,6 +155,8 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 		PodmanDiskSize:       strings.TrimSpace(reader.GetString("podman.disk_size")),
 		PodmanStorageDriver:  strings.ToLower(strings.TrimSpace(reader.GetString("podman.storage_driver"))),
 		PodmanRegistryMirror: strings.TrimSpace(reader.GetString("podman.registry_mirror")),
+		StorageURL:           strings.TrimSpace(reader.GetString("storage.url")),
+		StorageFolder:        strings.TrimSpace(reader.GetString("storage.folder")),
 		VMImage:              filepath.Join(executorDir, "system.qcow2"),
 		KernelImage:          filepath.Join(executorDir, "vmlinuz-virt"),
 		InitrdImage:          filepath.Join(executorDir, "initramfs-virt"),
@@ -192,6 +204,10 @@ func defaultFileConfig() fileConfig {
 			DiskSize:       defaultPodmanDiskSize,
 			StorageDriver:  defaultPodmanStorageDriver,
 		},
+		Storage: storageConfig{
+			URL:    defaultStorageURL,
+			Folder: defaultStorageFolder,
+		},
 		Timeouts: timeoutsConfig{
 			Command: "2m",
 			Boot:    "8m",
@@ -213,6 +229,8 @@ func setDefaults(reader *viper.Viper, cfg fileConfig) {
 	reader.SetDefault("podman.disk_image", cfg.Podman.DiskImage)
 	reader.SetDefault("podman.disk_size", cfg.Podman.DiskSize)
 	reader.SetDefault("podman.storage_driver", cfg.Podman.StorageDriver)
+	reader.SetDefault("storage.url", cfg.Storage.URL)
+	reader.SetDefault("storage.folder", cfg.Storage.Folder)
 	reader.SetDefault("timeouts.command", cfg.Timeouts.Command)
 	reader.SetDefault("timeouts.boot", cfg.Timeouts.Boot)
 }
@@ -282,6 +300,12 @@ func validate(cfg Config) error {
 	}
 	if cfg.PodmanStorageDriver == "" {
 		return fmt.Errorf("podman.storage_driver must be set")
+	}
+	if cfg.StorageURL == "" {
+		return fmt.Errorf("storage.url must be set")
+	}
+	if cfg.StorageFolder == "" {
+		return fmt.Errorf("storage.folder must be set")
 	}
 	if cfg.SSHSocket == "" {
 		return fmt.Errorf("ssh socket path must be set")

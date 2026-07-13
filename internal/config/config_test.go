@@ -44,6 +44,9 @@ func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	if cfg.PodmanRegistryMirror != defaultPodmanRegistryMirror {
 		t.Fatalf("PodmanRegistryMirror = %q, want default Podman registry mirror", cfg.PodmanRegistryMirror)
 	}
+	if cfg.StorageURL != defaultStorageURL || cfg.StorageFolder != defaultStorageFolder {
+		t.Fatalf("storage = %q/%q, want defaults %q/%q", cfg.StorageURL, cfg.StorageFolder, defaultStorageURL, defaultStorageFolder)
+	}
 	if cfg.QEMUIOProfile != "max" || cfg.DiskCache != "unsafe" || cfg.DiskAIO != "threads" {
 		t.Fatalf("I/O options = profile:%q cache:%q aio:%q, want max/unsafe/threads", cfg.QEMUIOProfile, cfg.DiskCache, cfg.DiskAIO)
 	}
@@ -89,6 +92,9 @@ podman:
   disk_image: disks/data.qcow2
   disk_size: 25G
   storage_driver: vfs
+storage:
+  url: https://storage.example.invalid/base
+  folder: releases/current
 timeouts:
   command: 30s
   boot: 15m
@@ -131,6 +137,9 @@ timeouts:
 	}
 	if cfg.PodmanStorageDriver != "vfs" {
 		t.Fatalf("PodmanStorageDriver = %q, want config override", cfg.PodmanStorageDriver)
+	}
+	if cfg.StorageURL != "https://storage.example.invalid/base" || cfg.StorageFolder != "releases/current" {
+		t.Fatalf("storage = %q/%q, want config overrides", cfg.StorageURL, cfg.StorageFolder)
 	}
 	if cfg.CommandTimeout != 30*time.Second || cfg.BootTimeout != 15*time.Minute {
 		t.Fatalf("timeouts = command:%s boot:%s, want 30s/15m", cfg.CommandTimeout, cfg.BootTimeout)

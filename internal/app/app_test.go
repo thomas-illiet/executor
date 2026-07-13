@@ -179,7 +179,7 @@ func TestShutdownStopsPodmanBeforeQEMU(t *testing.T) {
 func TestBootReportsMissingAssets(t *testing.T) {
 	dir := t.TempDir()
 	downloadCalls := 0
-	withDownloadVMAssets(t, func(_ context.Context, _ vm.AssetPaths, _ io.Writer) error {
+	withDownloadVMAssets(t, func(_ context.Context, _ vm.AssetStorage, _ string, _ vm.AssetInstallMode, _ io.Writer) error {
 		downloadCalls++
 		return nil
 	})
@@ -208,8 +208,8 @@ func TestBootReportsMissingAssets(t *testing.T) {
 // TestInitDownloadFailureDoesNotStartQEMU verifies failed asset downloads stop init before QEMU.
 func TestInitDownloadFailureDoesNotStartQEMU(t *testing.T) {
 	dir := t.TempDir()
-	downloadErr := errors.New("download VM asset system.qcow2: boom")
-	withDownloadVMAssets(t, func(_ context.Context, _ vm.AssetPaths, _ io.Writer) error {
+	downloadErr := errors.New("download VM assets archive: boom")
+	withDownloadVMAssets(t, func(_ context.Context, _ vm.AssetStorage, _ string, _ vm.AssetInstallMode, _ io.Writer) error {
 		return downloadErr
 	})
 	runner := &recordingRunner{}
@@ -258,7 +258,7 @@ func TestInitSkipsDownloadWhenAssetsExist(t *testing.T) {
 		t.Fatal(err)
 	}
 	downloadCalls := 0
-	withDownloadVMAssets(t, func(_ context.Context, _ vm.AssetPaths, _ io.Writer) error {
+	withDownloadVMAssets(t, func(_ context.Context, _ vm.AssetStorage, _ string, _ vm.AssetInstallMode, _ io.Writer) error {
 		downloadCalls++
 		return errors.New("download should not run")
 	})
@@ -292,9 +292,16 @@ func TestResetDownloadsAssetsAndRemovesPodmanDisk(t *testing.T) {
 		}
 	}
 	downloadCalls := 0
-	withDownloadVMAssets(t, func(_ context.Context, paths vm.AssetPaths, _ io.Writer) error {
+	var downloadMode vm.AssetInstallMode
+	withDownloadVMAssets(t, func(_ context.Context, _ vm.AssetStorage, _ string, mode vm.AssetInstallMode, _ io.Writer) error {
 		downloadCalls++
-		return writeTestAssets(paths)
+		downloadMode = mode
+		return writeTestAssets(vm.AssetPaths{
+			Image:  vmImage,
+			Kernel: filepath.Join(dir, "vmlinuz-virt"),
+			Initrd: filepath.Join(dir, "initramfs-virt"),
+			SSHKey: filepath.Join(dir, "id_ed25519"),
+		})
 	})
 	runner := &recordingRunner{}
 	cfg := config.Config{
@@ -320,6 +327,9 @@ func TestResetDownloadsAssetsAndRemovesPodmanDisk(t *testing.T) {
 	}
 	if downloadCalls != 1 {
 		t.Fatalf("download calls = %d, want 1", downloadCalls)
+	}
+	if downloadMode != vm.AssetInstallClean {
+		t.Fatalf("download mode = %d, want clean", downloadMode)
 	}
 	if _, err := os.Stat(vmImage); err != nil {
 		t.Fatalf("VM image was removed or stat failed: %v", err)
@@ -638,7 +648,7 @@ func commandKey(name string, args ...string) string {
 	return strings.Join(values, "\x00")
 }
 
-func withDownloadVMAssets(t *testing.T, fn func(context.Context, vm.AssetPaths, io.Writer) error) {
+func withDownloadVMAssets(t *testing.T, fn func(context.Context, vm.AssetStorage, string, vm.AssetInstallMode, io.Writer) error) {
 	t.Helper()
 	previous := downloadVMAssets
 	downloadVMAssets = fn

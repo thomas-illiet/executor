@@ -13,6 +13,7 @@ COMPOSE_SERVICE ?= executor-dev
 CONTAINER_PORTS ?=
 CONTAINER_NAME ?= qemu-podman-proxy
 VM_ASSETS_DIR ?= dist/output
+VM_ASSET_ARCHIVE ?= dist/release/executor-vm-assets.tar.gz
 VM_SMOKE_ASSETS_DIR ?= .local/vm-secure-smoke-assets
 VM_CONFIG_FILE ?= $(VM_ASSETS_DIR)/config.yaml
 STANDALONE_RUNTIME_DIR ?= /opt/executor-runtime
@@ -36,7 +37,7 @@ KVM_ARGS ?= $(shell test -e /dev/kvm && echo --device /dev/kvm)
 SECURE_RUN_ARGS ?= --read-only --user coder:coder --cap-drop ALL --security-opt no-new-privileges
 SECURE_TMPFS_ARGS ?= --tmpfs /home/coder:rw,nosuid,nodev,uid=1000,gid=1000,mode=700,size=8g --tmpfs /tmp:rw,nosuid,nodev,uid=1000,gid=1000,mode=1777,size=1g --tmpfs /run:rw,nosuid,nodev,uid=1000,gid=1000,mode=755,size=64m
 
-.PHONY: build test tidy clean docker-tooling-build docker-build docker-smoke docker-shell vm-asset-ready vm-asset vm-config standalone-qemu-zip standalone-qemu-smoke vm-init vm-serve vm-exec vm-shutdown vm-secure-smoke help
+.PHONY: build test tidy clean docker-tooling-build docker-build docker-smoke docker-shell vm-asset-ready vm-asset vm-asset-archive vm-config standalone-qemu-zip standalone-qemu-smoke vm-init vm-serve vm-exec vm-shutdown vm-secure-smoke help
 
 ##@ Local development
 
@@ -85,6 +86,22 @@ vm-asset: docker-tooling-build ## Generate Alpine VM assets using the local tool
 		--entrypoint /usr/local/share/executor/scripts/build-alpine.sh \
 		$(TOOLING_IMAGE)
 
+vm-asset-archive: vm-asset-ready ## Package all root VM asset files into one tar.gz archive.
+	@mkdir -p "$(dir $(VM_ASSET_ARCHIVE))"
+	@set --; \
+	for asset in "$(VM_ASSETS_DIR)"/*; do \
+		test -f "$$asset" || continue; \
+		name=$$(basename "$$asset"); \
+		case "$$name" in config.yaml|data.qcow2|$(notdir $(VM_ASSET_ARCHIVE))) continue ;; esac; \
+		set -- "$$@" "$$name"; \
+	done; \
+	test "$$#" -gt 0 || { echo "No VM asset files found in $(VM_ASSETS_DIR)." >&2; exit 1; }; \
+	tmp="$(VM_ASSET_ARCHIVE).tmp"; \
+	rm -f "$$tmp"; \
+	tar -czf "$$tmp" -C "$(VM_ASSETS_DIR)" "$$@"; \
+	mv "$$tmp" "$(VM_ASSET_ARCHIVE)"; \
+	echo "VM asset archive ready: $(VM_ASSET_ARCHIVE)"
+
 vm-config: ## Create an optional mounted executor config when explicitly requested.
 	@mkdir -p "$(VM_ASSETS_DIR)"
 	@if [ ! -f "$(VM_CONFIG_FILE)" ]; then \
@@ -103,6 +120,9 @@ vm-config: ## Create an optional mounted executor config when explicitly request
 			printf '%s\n' '  disk_image: /home/coder/.executor/data.qcow2'; \
 			printf '%s\n' '  disk_size: 10G'; \
 			printf '%s\n' '  storage_driver: overlay'; \
+			printf '%s\n' 'storage:'; \
+			printf '%s\n' '  url: https://example.invalid'; \
+			printf '%s\n' '  folder: executor-vm-assets'; \
 			printf '%s\n' 'timeouts:'; \
 			printf '%s\n' '  command: 2m'; \
 			printf '%s\n' '  boot: 8m'; \
@@ -184,4 +204,4 @@ help: ## Show available targets and common override variables.
 		printf "Usage:\n  make <target> [VAR=value]\n\nTargets:\n"} \
 		/^##@ / {printf "\n%s\n", substr($$0, 5)} \
 		/^[A-Za-z0-9_.-]+:.*## / {printf "  %-24s %s\n", $$1, $$2} \
-		END {printf "\nCommon variables:\n  GO=%s\n  BINARY=%s\n  DOCKERFILE=%s\n  PLATFORM=%s\n  IMAGE=%s\n  TOOLING_IMAGE=%s\n  WORKSPACE=%s\n  VM_ASSETS_DIR=%s\n  VM_SMOKE_ASSETS_DIR=%s\n  STANDALONE_RUNTIME_DIR=%s\n  STANDALONE_ZIP=%s\n  STANDALONE_QEMU_IMAGE=%s\n  STANDALONE_TEST_IMAGE=%s\n  STANDALONE_BOOT_TIMEOUT=%s\n  COMPOSE_FILE=%s\n  COMPOSE_SERVICE=%s\n  CONTAINER_NAME=%s\n  CONTAINER_PORTS=%s\n", "$(GO)", "$(BINARY)", "$(DOCKERFILE)", "$(PLATFORM)", "$(IMAGE)", "$(TOOLING_IMAGE)", "$(WORKSPACE)", "$(VM_ASSETS_DIR)", "$(VM_SMOKE_ASSETS_DIR)", "$(STANDALONE_RUNTIME_DIR)", "$(STANDALONE_ZIP)", "$(STANDALONE_QEMU_IMAGE)", "$(STANDALONE_TEST_IMAGE)", "$(STANDALONE_BOOT_TIMEOUT)", "$(COMPOSE_FILE)", "$(COMPOSE_SERVICE)", "$(CONTAINER_NAME)", "$(CONTAINER_PORTS)"}' $(MAKEFILE_LIST)
+		END {printf "\nCommon variables:\n  GO=%s\n  BINARY=%s\n  DOCKERFILE=%s\n  PLATFORM=%s\n  IMAGE=%s\n  TOOLING_IMAGE=%s\n  WORKSPACE=%s\n  VM_ASSETS_DIR=%s\n  VM_ASSET_ARCHIVE=%s\n  VM_SMOKE_ASSETS_DIR=%s\n  STANDALONE_RUNTIME_DIR=%s\n  STANDALONE_ZIP=%s\n  STANDALONE_QEMU_IMAGE=%s\n  STANDALONE_TEST_IMAGE=%s\n  STANDALONE_BOOT_TIMEOUT=%s\n  COMPOSE_FILE=%s\n  COMPOSE_SERVICE=%s\n  CONTAINER_NAME=%s\n  CONTAINER_PORTS=%s\n", "$(GO)", "$(BINARY)", "$(DOCKERFILE)", "$(PLATFORM)", "$(IMAGE)", "$(TOOLING_IMAGE)", "$(WORKSPACE)", "$(VM_ASSETS_DIR)", "$(VM_ASSET_ARCHIVE)", "$(VM_SMOKE_ASSETS_DIR)", "$(STANDALONE_RUNTIME_DIR)", "$(STANDALONE_ZIP)", "$(STANDALONE_QEMU_IMAGE)", "$(STANDALONE_TEST_IMAGE)", "$(STANDALONE_BOOT_TIMEOUT)", "$(COMPOSE_FILE)", "$(COMPOSE_SERVICE)", "$(CONTAINER_NAME)", "$(CONTAINER_PORTS)"}' $(MAKEFILE_LIST)

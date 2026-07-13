@@ -18,7 +18,7 @@ func (a App) init(ctx context.Context, manager vm.Manager, creds vm.Credentials)
 		return err
 	}
 	if err := a.ensureVMAssets(); err != nil {
-		if err := downloadVMAssets(ctx, a.assetPaths(), a.Out); err != nil {
+		if err := a.downloadVMAssets(ctx, vm.AssetInstallOverlay); err != nil {
 			return err
 		}
 		if err := a.ensureVMAssets(); err != nil {
@@ -56,12 +56,23 @@ func (a App) reset(ctx context.Context, manager vm.Manager, creds vm.Credentials
 	_ = manager.StopPodman(ctx)
 	_ = manager.Sync(ctx)
 	_ = manager.Stop(ctx)
+	if err := a.downloadVMAssets(ctx, vm.AssetInstallClean); err != nil {
+		return err
+	}
 	if a.Config.PodmanDiskImage != "" {
 		if err := os.Remove(a.Config.PodmanDiskImage); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
 	return a.init(ctx, manager, creds)
+}
+
+// downloadVMAssets installs the configured remote archive into the executor directory.
+func (a App) downloadVMAssets(ctx context.Context, mode vm.AssetInstallMode) error {
+	return downloadVMAssets(ctx, vm.AssetStorage{
+		URL:    a.Config.StorageURL,
+		Folder: a.Config.StorageFolder,
+	}, a.Config.ExecutorDir, mode, a.Out)
 }
 
 // addCerts copies local certificates into the VM and refreshes trust.

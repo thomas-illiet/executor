@@ -1,12 +1,15 @@
 package vm
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -17,12 +20,23 @@ const (
 	initrdAsset       = "initramfs-virt"
 	sshKeyAsset       = "id_ed25519"
 	sshPublicKeyAsset = "id_ed25519.pub"
+	assetArchiveName  = "executor-vm-assets.tar.gz"
+	configAsset       = "config.yaml"
+	podmanDiskAsset   = "data.qcow2"
 )
 
-var assetBaseURLBytes = []byte{
-	104, 116, 116, 112, 115, 58, 47, 47, 101, 120, 97, 109, 112, 108, 101, 46,
-	105, 110, 118, 97, 108, 105, 100, 47, 101, 120, 101, 99, 117, 116, 111,
-	114, 45, 118, 109, 45, 97, 115, 115, 101, 116, 115,
+// AssetInstallMode controls whether archive files overlay or replace local state.
+type AssetInstallMode int
+
+const (
+	AssetInstallOverlay AssetInstallMode = iota
+	AssetInstallClean
+)
+
+// AssetStorage identifies the remote folder containing the VM asset archive.
+type AssetStorage struct {
+	URL    string
+	Folder string
 }
 
 type AssetPaths struct {
@@ -33,20 +47,24 @@ type AssetPaths struct {
 	SSHPublicKey string
 }
 
-type assetFile struct {
-	name string
-	path string
-	mode os.FileMode
-}
+// DownloadAssets downloads, prepares, and installs the VM asset archive.
+func DownloadAssets(ctx context.Context, storage AssetStorage, executorDir string, mode AssetInstallMode, out io.Writer) error {
+	if out != nil {
+		fmt.Fprintln(out, "Downloading VM assets...")
+	}
+	stageDir, err := prepareAssetArchive(ctx, storage, executorDir, out)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stageDir)
 
-type assetDownloadGroup struct {
-	label string
-	files []assetFile
-}
-
-// DownloadAssets downloads and replaces all required VM assets from the built-in base URL.
-func DownloadAssets(ctx context.Context, paths AssetPaths, out io.Writer) error {
-	return downloadAssetsFromBaseURL(ctx, string(assetBaseURLBytes), paths, out)
+	if err := installPreparedAssets(stageDir, executorDir, mode); err != nil {
+		return fmt.Errorf("install VM assets: %w", err)
+	}
+	if out != nil {
+		fmt.Fprintln(out, "VM assets ready.")
+	}
+	return nil
 }
 
 // EnsureAssets verifies that all required VM assets are already available locally.
@@ -87,126 +105,232 @@ func missingAssets(paths AssetPaths) []string {
 	return missing
 }
 
-// downloadAssetsFromBaseURL downloads every VM asset into temporary files, then replaces the local set.
-func downloadAssetsFromBaseURL(ctx context.Context, baseURL string, paths AssetPaths, out io.Writer) error {
-	groups := assetDownloadGroups(paths)
-	if out != nil {
-		fmt.Fprintln(out, "Downloading VM assets...")
-	}
-	for _, group := range groups {
-		if out != nil {
-			fmt.Fprintf(out, "Downloading %s...\n", group.label)
-		}
-		for _, asset := range group.files {
-			if err := downloadAsset(ctx, baseURL, asset); err != nil {
-				return err
-			}
-		}
-	}
-	if out != nil {
-		fmt.Fprintln(out, "VM assets ready.")
-	}
-	return nil
-}
-
-// assetDownloadGroups returns the required assets with the concise labels shown during init.
-func assetDownloadGroups(paths AssetPaths) []assetDownloadGroup {
-	return []assetDownloadGroup{
-		{
-			label: imageAsset,
-			files: []assetFile{{name: imageAsset, path: paths.Image, mode: 0o644}},
-		},
-		{
-			label: kernelAsset,
-			files: []assetFile{{name: kernelAsset, path: paths.Kernel, mode: 0o644}},
-		},
-		{
-			label: initrdAsset,
-			files: []assetFile{{name: initrdAsset, path: paths.Initrd, mode: 0o644}},
-		},
-		{
-			label: "SSH keys",
-			files: []assetFile{
-				{name: sshKeyAsset, path: paths.SSHKey, mode: 0o600},
-				{name: sshPublicKeyAsset, path: paths.publicKey(), mode: 0o644},
-			},
-		},
-	}
-}
-
-// downloadAsset downloads one asset and atomically replaces the target file.
-func downloadAsset(ctx context.Context, baseURL string, asset assetFile) error {
-	sourceURL, err := buildAssetURL(baseURL, asset.name)
+// prepareAssetArchive downloads and safely expands the archive into a staging directory.
+func prepareAssetArchive(ctx context.Context, storage AssetStorage, executorDir string, out io.Writer) (string, error) {
+	archiveURL, err := buildAssetArchiveURL(storage)
 	if err != nil {
-		return fmt.Errorf("download VM asset %s: %w", asset.name, err)
+		return "", fmt.Errorf("download VM assets archive: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(asset.path), 0o755); err != nil {
-		return fmt.Errorf("download VM asset %s: %w", asset.name, err)
+	parentDir := filepath.Dir(executorDir)
+	if err := os.MkdirAll(parentDir, 0o755); err != nil {
+		return "", fmt.Errorf("download VM assets archive: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	archive, err := os.CreateTemp(parentDir, ".executor-vm-assets-*.tar.gz")
 	if err != nil {
-		return fmt.Errorf("download VM asset %s: %w", asset.name, err)
+		return "", fmt.Errorf("download VM assets archive: %w", err)
+	}
+	archivePath := archive.Name()
+	defer os.Remove(archivePath)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, archiveURL, nil)
+	if err != nil {
+		_ = archive.Close()
+		return "", fmt.Errorf("download VM assets archive: %w", err)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("download VM asset %s: %w", asset.name, err)
+		_ = archive.Close()
+		return "", fmt.Errorf("download VM assets archive: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download VM asset %s: HTTP %d from %s", asset.name, resp.StatusCode, sourceURL)
+		_ = archive.Close()
+		return "", fmt.Errorf("download VM assets archive: HTTP %d from %s", resp.StatusCode, archiveURL)
+	}
+	if _, err := io.Copy(archive, resp.Body); err != nil {
+		_ = archive.Close()
+		return "", fmt.Errorf("download VM assets archive: %w", err)
+	}
+	if err := archive.Close(); err != nil {
+		return "", fmt.Errorf("download VM assets archive: %w", err)
+	}
+	if out != nil {
+		fmt.Fprintln(out, "Extracting VM assets...")
 	}
 
-	temp, err := os.CreateTemp(filepath.Dir(asset.path), "."+asset.name+".*")
+	stageDir, err := os.MkdirTemp(parentDir, ".executor-vm-assets-stage-*")
 	if err != nil {
-		return fmt.Errorf("download VM asset %s: %w", asset.name, err)
+		return "", fmt.Errorf("extract VM assets archive: %w", err)
 	}
-	tempPath := temp.Name()
-	removeTemp := true
-	defer func() {
-		if removeTemp {
-			_ = os.Remove(tempPath)
-		}
-	}()
+	if err := extractAssetArchive(archivePath, stageDir); err != nil {
+		os.RemoveAll(stageDir)
+		return "", err
+	}
+	return stageDir, nil
+}
 
-	written, copyErr := io.Copy(temp, resp.Body)
-	closeErr := temp.Close()
+// extractAssetArchive expands regular root files while rejecting unsafe tar entries.
+func extractAssetArchive(archivePath, stageDir string) error {
+	archive, err := os.Open(archivePath)
+	if err != nil {
+		return fmt.Errorf("extract VM assets archive: %w", err)
+	}
+	defer archive.Close()
+
+	gzipReader, err := gzip.NewReader(archive)
+	if err != nil {
+		return fmt.Errorf("extract VM assets archive: %w", err)
+	}
+	defer gzipReader.Close()
+
+	tarReader := tar.NewReader(gzipReader)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("extract VM assets archive: %w", err)
+		}
+		name, err := safeRootAssetName(header.Name)
+		if err != nil {
+			return fmt.Errorf("extract VM assets archive: %w", err)
+		}
+		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+			return fmt.Errorf("extract VM assets archive: unsupported entry %q", header.Name)
+		}
+		if isProtectedAsset(name) {
+			continue
+		}
+		if err := extractAssetFile(tarReader, filepath.Join(stageDir, name), header.FileInfo().Mode().Perm()); err != nil {
+			return fmt.Errorf("extract VM assets archive %s: %w", name, err)
+		}
+	}
+}
+
+// safeRootAssetName accepts only plain filenames at the archive root.
+func safeRootAssetName(name string) (string, error) {
+	if name == "" || name == "." || name == ".." || path.IsAbs(name) || strings.Contains(name, "/") {
+		return "", fmt.Errorf("unsafe archive entry %q", name)
+	}
+	return name, nil
+}
+
+// extractAssetFile writes one staged archive member with ordinary permission bits only.
+func extractAssetFile(reader io.Reader, target string, mode os.FileMode) error {
+	if mode == 0 {
+		mode = 0o644
+	}
+	file, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(file, reader)
+	closeErr := file.Close()
 	if copyErr != nil {
-		return fmt.Errorf("download VM asset %s: %w", asset.name, copyErr)
+		return copyErr
 	}
 	if closeErr != nil {
-		return fmt.Errorf("download VM asset %s: %w", asset.name, closeErr)
+		return closeErr
 	}
-	if written == 0 {
-		return fmt.Errorf("download VM asset %s: empty response from %s", asset.name, sourceURL)
+	return os.Chmod(target, mode)
+}
+
+// installPreparedAssets applies staged files over local state or after a clean reset.
+func installPreparedAssets(stageDir, executorDir string, mode AssetInstallMode) error {
+	if err := os.MkdirAll(executorDir, 0o755); err != nil {
+		return err
 	}
-	if err := os.Chmod(tempPath, asset.mode); err != nil {
-		return fmt.Errorf("download VM asset %s: %w", asset.name, err)
+	if mode == AssetInstallClean {
+		if err := cleanExecutorDir(executorDir); err != nil {
+			return err
+		}
 	}
-	if err := os.Rename(tempPath, asset.path); err != nil {
-		return fmt.Errorf("download VM asset %s: %w", asset.name, err)
+	entries, err := os.ReadDir(stageDir)
+	if err != nil {
+		return err
 	}
-	if err := os.Chmod(asset.path, asset.mode); err != nil {
-		return fmt.Errorf("download VM asset %s: %w", asset.name, err)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return fmt.Errorf("prepared asset %q is not a regular file", entry.Name())
+		}
+		if err := copyPreparedAsset(filepath.Join(stageDir, entry.Name()), filepath.Join(executorDir, entry.Name()), executorDir); err != nil {
+			return err
+		}
 	}
-	removeTemp = false
 	return nil
 }
 
-// buildAssetURL joins the built-in base URL with an asset filename.
-func buildAssetURL(baseURL, name string) (string, error) {
-	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if trimmed == "" {
-		return "", fmt.Errorf("asset base URL is empty")
+// cleanExecutorDir removes all resettable state while preserving the user config.
+func cleanExecutorDir(executorDir string) error {
+	entries, err := os.ReadDir(executorDir)
+	if err != nil {
+		return err
 	}
-	parsed, err := url.Parse(trimmed)
+	for _, entry := range entries {
+		if entry.Name() == configAsset {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(executorDir, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// copyPreparedAsset replaces one destination through a temporary file on its filesystem.
+func copyPreparedAsset(source, target, executorDir string) error {
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	info, err := input.Stat()
+	if err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(executorDir, ".asset-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if _, err := io.Copy(temp, input); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tempPath, info.Mode().Perm()); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, target); err != nil {
+		return err
+	}
+	return nil
+}
+
+// buildAssetArchiveURL joins the configured server, remote folder, and archive name.
+func buildAssetArchiveURL(storage AssetStorage) (string, error) {
+	base := strings.TrimRight(strings.TrimSpace(storage.URL), "/")
+	folder := strings.Trim(strings.TrimSpace(storage.Folder), "/")
+	if base == "" {
+		return "", fmt.Errorf("storage.url must be set")
+	}
+	if folder == "" {
+		return "", fmt.Errorf("storage.folder must be set")
+	}
+	parsed, err := url.Parse(base)
 	if err != nil {
 		return "", err
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", fmt.Errorf("asset base URL must use http or https")
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", fmt.Errorf("storage.url must use http or https")
 	}
-	return trimmed + "/" + url.PathEscape(name), nil
+	segments := strings.Split(folder, "/")
+	for _, segment := range segments {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", fmt.Errorf("storage.folder must be a relative remote folder")
+		}
+	}
+	return parsed.JoinPath(append(segments, assetArchiveName)...).String(), nil
+}
+
+// isProtectedAsset reports files that an archive must never install.
+func isProtectedAsset(name string) bool {
+	return name == configAsset || name == podmanDiskAsset
 }
 
 // exists reports whether the path exists.

@@ -48,6 +48,12 @@ Generate the Alpine VM assets:
 make vm-asset
 ```
 
+Package every regular root asset into the archive consumed by `executor init`:
+
+```sh
+make vm-asset-archive
+```
+
 ## Generated assets
 
 `make vm-asset` writes generated VM assets to `dist/output/` and uses
@@ -60,3 +66,14 @@ The Podman data disk is a qcow2 image created with thin provisioning
 (`preallocation=off`) at `/home/coder/.executor/data.qcow2`;
 `podman.disk_size` is the virtual capacity, not the space allocated on the host
 at creation time.
+
+When the required VM assets are missing, `executor init` downloads
+`executor-vm-assets.tar.gz` from the configured remote storage folder. A reset
+always downloads a fresh archive and rebuilds `/home/coder/.executor` while
+preserving `config.yaml`:
+
+```yaml
+storage:
+  url: https://example.invalid
+  folder: executor-vm-assets
+```

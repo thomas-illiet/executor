@@ -1,9 +1,10 @@
 package vm
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,12 +16,7 @@ import (
 // TestEnsureAssetsAcceptsPresentFiles verifies complete asset sets pass validation.
 func TestEnsureAssetsAcceptsPresentFiles(t *testing.T) {
 	dir := t.TempDir()
-	paths := AssetPaths{
-		Image:  filepath.Join(dir, "system.qcow2"),
-		Kernel: filepath.Join(dir, "vmlinuz-virt"),
-		Initrd: filepath.Join(dir, "initramfs-virt"),
-		SSHKey: filepath.Join(dir, "id_ed25519"),
-	}
+	paths := testAssetPaths(dir)
 	for _, path := range []string{paths.Image, paths.Kernel, paths.Initrd, paths.SSHKey, paths.publicKey()} {
 		if err := os.WriteFile(path, []byte("asset"), 0o600); err != nil {
 			t.Fatal(err)
@@ -32,128 +28,217 @@ func TestEnsureAssetsAcceptsPresentFiles(t *testing.T) {
 	}
 }
 
-// TestEnsureAssetsReportsMissingFiles verifies boot-time asset checks only report missing files.
+// TestEnsureAssetsReportsMissingFiles verifies boot-time checks report missing files.
 func TestEnsureAssetsReportsMissingFiles(t *testing.T) {
 	dir := t.TempDir()
-	err := EnsureAssets(AssetPaths{
-		Image:  filepath.Join(dir, "system.qcow2"),
-		Kernel: filepath.Join(dir, "vmlinuz-virt"),
-		Initrd: filepath.Join(dir, "initramfs-virt"),
-		SSHKey: filepath.Join(dir, "id_ed25519"),
-	})
+	err := EnsureAssets(testAssetPaths(dir))
 	if err == nil || !strings.Contains(err.Error(), "generate and mount them before boot") {
 		t.Fatalf("EnsureAssets() error = %v, want asset guidance", err)
 	}
 }
 
-// TestDownloadAssetsFromBaseURLReplacesAssets verifies init-time asset downloads replace the full local set.
-func TestDownloadAssetsFromBaseURLReplacesAssets(t *testing.T) {
-	dir := t.TempDir()
-	paths := testAssetPaths(dir)
-	for _, path := range []string{paths.Image, paths.Kernel, paths.Initrd, paths.SSHKey, paths.publicKey()} {
-		if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+// TestDownloadAssetsOverlaysArchiveFiles verifies unknown files are accepted without clearing local state.
+func TestDownloadAssetsOverlaysArchiveFiles(t *testing.T) {
+	executorDir := t.TempDir()
+	writeFile(t, filepath.Join(executorDir, configAsset), "local-config", 0o600)
+	writeFile(t, filepath.Join(executorDir, podmanDiskAsset), "local-data", 0o600)
+	writeFile(t, filepath.Join(executorDir, "local-only"), "keep", 0o644)
 
-	requests := map[string]int{}
+	archive := testArchive(t,
+		tarEntry{name: imageAsset, content: "image", mode: 0o644},
+		tarEntry{name: kernelAsset, content: "kernel", mode: 0o644},
+		tarEntry{name: initrdAsset, content: "initrd", mode: 0o644},
+		tarEntry{name: sshKeyAsset, content: "private", mode: 0o600},
+		tarEntry{name: sshPublicKeyAsset, content: "public", mode: 0o644},
+		tarEntry{name: "future-asset", content: "", mode: 0o640},
+		tarEntry{name: configAsset, content: "archive-config", mode: 0o644},
+		tarEntry{name: podmanDiskAsset, content: "archive-data", mode: 0o644},
+	)
+	requestedPath := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := filepath.Base(r.URL.Path)
-		requests[name]++
-		_, _ = w.Write([]byte("new-" + name))
+		requestedPath = r.URL.Path
+		_, _ = w.Write(archive)
 	}))
 	defer server.Close()
 
 	var out bytes.Buffer
-	if err := downloadAssetsFromBaseURL(context.Background(), server.URL, paths, &out); err != nil {
+	err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL + "/", Folder: "/releases/v1/"}, executorDir, AssetInstallOverlay, &out)
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	for _, asset := range []struct {
-		name string
-		path string
-		want string
-	}{
-		{name: imageAsset, path: paths.Image, want: "new-" + imageAsset},
-		{name: kernelAsset, path: paths.Kernel, want: "new-" + kernelAsset},
-		{name: initrdAsset, path: paths.Initrd, want: "new-" + initrdAsset},
-		{name: sshKeyAsset, path: paths.SSHKey, want: "new-" + sshKeyAsset},
-		{name: sshPublicKeyAsset, path: paths.publicKey(), want: "new-" + sshPublicKeyAsset},
-	} {
-		content, err := os.ReadFile(asset.path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(content) != asset.want {
-			t.Fatalf("%s content = %q, want %q", asset.name, content, asset.want)
-		}
-		if requests[asset.name] != 1 {
-			t.Fatalf("%s requests = %d, want 1", asset.name, requests[asset.name])
-		}
+	if requestedPath != "/releases/v1/"+assetArchiveName {
+		t.Fatalf("request path = %q, want archive path", requestedPath)
 	}
-	info, err := os.Stat(paths.SSHKey)
+	assertFileContent(t, filepath.Join(executorDir, imageAsset), "image")
+	assertFileContent(t, filepath.Join(executorDir, "future-asset"), "")
+	assertFileContent(t, filepath.Join(executorDir, "local-only"), "keep")
+	assertFileContent(t, filepath.Join(executorDir, configAsset), "local-config")
+	assertFileContent(t, filepath.Join(executorDir, podmanDiskAsset), "local-data")
+	info, err := os.Stat(filepath.Join(executorDir, sshKeyAsset))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("private key mode = %v, want 0600", info.Mode().Perm())
 	}
-	output := out.String()
-	for _, fragment := range []string{
-		"Downloading VM assets...",
-		"Downloading system.qcow2...",
-		"Downloading vmlinuz-virt...",
-		"Downloading initramfs-virt...",
-		"Downloading SSH keys...",
-		"VM assets ready.",
-	} {
-		if !strings.Contains(output, fragment) {
-			t.Fatalf("output %q does not contain %q", output, fragment)
+	for _, fragment := range []string{"Downloading VM assets...", "Extracting VM assets...", "VM assets ready."} {
+		if !strings.Contains(out.String(), fragment) {
+			t.Fatalf("output %q does not contain %q", out.String(), fragment)
 		}
 	}
 }
 
-// TestDownloadAssetsFromBaseURLReportsHTTPError verifies HTTP failures include the asset name and status.
-func TestDownloadAssetsFromBaseURLReportsHTTPError(t *testing.T) {
-	dir := t.TempDir()
-	server := httptest.NewServer(http.NotFoundHandler())
+// TestDownloadAssetsCleanRemovesOldState verifies reset mode preserves only config before install.
+func TestDownloadAssetsCleanRemovesOldState(t *testing.T) {
+	executorDir := t.TempDir()
+	writeFile(t, filepath.Join(executorDir, configAsset), "local-config", 0o600)
+	writeFile(t, filepath.Join(executorDir, podmanDiskAsset), "old-data", 0o600)
+	writeFile(t, filepath.Join(executorDir, "stale"), "remove", 0o644)
+	if err := os.Mkdir(filepath.Join(executorDir, "old-dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	archive := testArchive(t,
+		tarEntry{name: imageAsset, content: "new-image", mode: 0o644},
+		tarEntry{name: configAsset, content: "ignored", mode: 0o644},
+		tarEntry{name: podmanDiskAsset, content: "ignored", mode: 0o644},
+		tarEntry{name: "future", content: "new", mode: 0o644},
+	)
+	server := archiveServer(archive)
 	defer server.Close()
 
-	err := downloadAssetsFromBaseURL(context.Background(), server.URL, testAssetPaths(dir), nil)
-	if err == nil || !strings.Contains(err.Error(), "download VM asset system.qcow2: HTTP 404") {
-		t.Fatalf("downloadAssetsFromBaseURL() error = %v, want HTTP 404 asset error", err)
+	if err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallClean, nil); err != nil {
+		t.Fatal(err)
+	}
+	assertFileContent(t, filepath.Join(executorDir, configAsset), "local-config")
+	assertFileContent(t, filepath.Join(executorDir, imageAsset), "new-image")
+	assertFileContent(t, filepath.Join(executorDir, "future"), "new")
+	for _, removed := range []string{podmanDiskAsset, "stale", "old-dir"} {
+		if _, err := os.Stat(filepath.Join(executorDir, removed)); !os.IsNotExist(err) {
+			t.Fatalf("%s stat error = %v, want removed", removed, err)
+		}
 	}
 }
 
-// TestDownloadAssetsFromBaseURLRejectsEmptyResponse verifies empty assets fail before replacement.
-func TestDownloadAssetsFromBaseURLRejectsEmptyResponse(t *testing.T) {
-	dir := t.TempDir()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
+// TestDownloadAssetsFailureLeavesCleanTargetUntouched verifies preparation precedes reset cleanup.
+func TestDownloadAssetsFailureLeavesCleanTargetUntouched(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		handler http.Handler
+	}{
+		{name: "http", handler: http.NotFoundHandler()},
+		{name: "invalid gzip", handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("not gzip")) })},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			executorDir := t.TempDir()
+			writeFile(t, filepath.Join(executorDir, "existing"), "keep", 0o644)
+			server := httptest.NewServer(test.handler)
+			defer server.Close()
+
+			err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallClean, nil)
+			if err == nil {
+				t.Fatal("DownloadAssets() error = nil, want preparation error")
+			}
+			assertFileContent(t, filepath.Join(executorDir, "existing"), "keep")
+		})
+	}
+}
+
+// TestDownloadAssetsRejectsUnsafeEntries verifies only regular root files are accepted.
+func TestDownloadAssetsRejectsUnsafeEntries(t *testing.T) {
+	for _, entry := range []tarEntry{
+		{name: "nested/file", content: "bad", mode: 0o644},
+		{name: "nested/../escape", content: "bad", mode: 0o644},
+		{name: "../escape", content: "bad", mode: 0o644},
+		{name: "/absolute", content: "bad", mode: 0o644},
+		{name: "folder", mode: 0o755, typeflag: tar.TypeDir},
+		{name: "link", mode: 0o777, typeflag: tar.TypeSymlink, linkname: "target"},
+	} {
+		t.Run(strings.ReplaceAll(entry.name, "/", "_"), func(t *testing.T) {
+			executorDir := t.TempDir()
+			archive := testArchive(t, entry)
+			server := archiveServer(archive)
+			defer server.Close()
+
+			err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallOverlay, nil)
+			if err == nil {
+				t.Fatalf("DownloadAssets() accepted unsafe entry %#v", entry)
+			}
+		})
+	}
+}
+
+// TestBuildAssetArchiveURLValidatesStorage verifies URL construction and required fields.
+func TestBuildAssetArchiveURLValidatesStorage(t *testing.T) {
+	got, err := buildAssetArchiveURL(AssetStorage{URL: "https://storage.example/base/", Folder: "/releases/current/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://storage.example/base/releases/current/" + assetArchiveName
+	if got != want {
+		t.Fatalf("buildAssetArchiveURL() = %q, want %q", got, want)
+	}
+	for _, storage := range []AssetStorage{
+		{Folder: "assets"},
+		{URL: "https://storage.example"},
+		{URL: "file:///tmp", Folder: "assets"},
+		{URL: "https://storage.example", Folder: "../assets"},
+	} {
+		if _, err := buildAssetArchiveURL(storage); err == nil {
+			t.Fatalf("buildAssetArchiveURL(%+v) error = nil, want validation error", storage)
+		}
+	}
+}
+
+type tarEntry struct {
+	name     string
+	content  string
+	mode     int64
+	typeflag byte
+	linkname string
+}
+
+func testArchive(t *testing.T, entries ...tarEntry) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	gzipWriter := gzip.NewWriter(&buffer)
+	tarWriter := tar.NewWriter(gzipWriter)
+	for _, entry := range entries {
+		typeflag := entry.typeflag
+		if typeflag == 0 {
+			typeflag = tar.TypeReg
+		}
+		header := &tar.Header{
+			Name:     entry.name,
+			Mode:     entry.mode,
+			Size:     int64(len(entry.content)),
+			Typeflag: typeflag,
+			Linkname: entry.linkname,
+		}
+		if typeflag != tar.TypeReg && typeflag != tar.TypeRegA {
+			header.Size = 0
+		}
+		if err := tarWriter.WriteHeader(header); err != nil {
+			t.Fatal(err)
+		}
+		if header.Size > 0 {
+			if _, err := tarWriter.Write([]byte(entry.content)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := tarWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func archiveServer(archive []byte) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(archive)
 	}))
-	defer server.Close()
-
-	err := downloadAssetsFromBaseURL(context.Background(), server.URL, testAssetPaths(dir), nil)
-	if err == nil || !strings.Contains(err.Error(), "download VM asset system.qcow2: empty response") {
-		t.Fatalf("downloadAssetsFromBaseURL() error = %v, want empty response error", err)
-	}
-}
-
-// TestDownloadAssetsFromBaseURLReportsNetworkError verifies transport failures are surfaced clearly.
-func TestDownloadAssetsFromBaseURLReportsNetworkError(t *testing.T) {
-	dir := t.TempDir()
-	previous := http.DefaultClient
-	http.DefaultClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return nil, errors.New("network down")
-	})}
-	t.Cleanup(func() {
-		http.DefaultClient = previous
-	})
-
-	err := downloadAssetsFromBaseURL(context.Background(), "https://example.invalid", testAssetPaths(dir), nil)
-	if err == nil || !strings.Contains(err.Error(), "download VM asset system.qcow2:") || !strings.Contains(err.Error(), "network down") {
-		t.Fatalf("downloadAssetsFromBaseURL() error = %v, want network asset error", err)
-	}
 }
 
 func testAssetPaths(dir string) AssetPaths {
@@ -165,8 +250,20 @@ func testAssetPaths(dir string) AssetPaths {
 	}
 }
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
+func writeFile(t *testing.T, path, content string, mode os.FileMode) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		t.Fatal(err)
+	}
+}
 
-func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return fn(req)
+func assertFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != want {
+		t.Fatalf("%s content = %q, want %q", path, content, want)
+	}
 }

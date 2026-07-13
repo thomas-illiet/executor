@@ -92,6 +92,9 @@ podman:
   disk_image: /home/coder/.executor/data.qcow2
   disk_size: 10G
   storage_driver: overlay
+storage:
+  url: https://example.invalid
+  folder: executor-vm-assets
 timeouts:
   command: 2m
   boot: 8m
