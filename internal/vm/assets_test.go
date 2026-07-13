@@ -72,8 +72,8 @@ func TestDownloadAssetsOverlaysArchiveFiles(t *testing.T) {
 	assertFileContent(t, filepath.Join(executorDir, imageAsset), "image")
 	assertFileContent(t, filepath.Join(executorDir, "future-asset"), "")
 	assertFileContent(t, filepath.Join(executorDir, "local-only"), "keep")
-	assertFileContent(t, filepath.Join(executorDir, configAsset), "local-config")
-	assertFileContent(t, filepath.Join(executorDir, podmanDiskAsset), "local-data")
+	assertFileContent(t, filepath.Join(executorDir, configAsset), "archive-config")
+	assertFileContent(t, filepath.Join(executorDir, podmanDiskAsset), "archive-data")
 	info, err := os.Stat(filepath.Join(executorDir, sshKeyAsset))
 	if err != nil {
 		t.Fatal(err)
@@ -160,10 +160,11 @@ func TestDownloadAssetsCleanRemovesOldState(t *testing.T) {
 	if err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallClean, nil); err != nil {
 		t.Fatal(err)
 	}
-	assertFileContent(t, filepath.Join(executorDir, configAsset), "local-config")
+	assertFileContent(t, filepath.Join(executorDir, configAsset), "ignored")
+	assertFileContent(t, filepath.Join(executorDir, podmanDiskAsset), "ignored")
 	assertFileContent(t, filepath.Join(executorDir, imageAsset), "new-image")
 	assertFileContent(t, filepath.Join(executorDir, "future"), "new")
-	for _, removed := range []string{podmanDiskAsset, "stale", "old-dir"} {
+	for _, removed := range []string{"stale", "old-dir"} {
 		if _, err := os.Stat(filepath.Join(executorDir, removed)); !os.IsNotExist(err) {
 			t.Fatalf("%s stat error = %v, want removed", removed, err)
 		}

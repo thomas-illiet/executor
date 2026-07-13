@@ -189,9 +189,6 @@ func extractAssetArchive(archivePath, stageDir string) error {
 		if err != nil {
 			return fmt.Errorf("extract VM assets archive: %w", err)
 		}
-		if isProtectedAsset(name) {
-			continue
-		}
 
 		target := filepath.Join(stageDir, filepath.FromSlash(name))
 		switch header.Typeflag {
@@ -431,11 +428,6 @@ func buildAssetArchiveURL(storage AssetStorage) (string, error) {
 		}
 	}
 	return parsed.JoinPath(append(segments, assetArchiveName)...).String(), nil
-}
-
-// isProtectedAsset reports files that an archive must never install.
-func isProtectedAsset(name string) bool {
-	return name == configAsset || name == podmanDiskAsset
 }
 
 // exists reports whether the path exists.
