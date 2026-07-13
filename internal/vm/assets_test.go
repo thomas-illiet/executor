@@ -88,6 +88,57 @@ func TestDownloadAssetsOverlaysArchiveFiles(t *testing.T) {
 	}
 }
 
+// TestDownloadAssetsAcceptsRootMarkerAndDirectories verifies tar -C dir . archives are supported.
+func TestDownloadAssetsAcceptsRootMarkerAndDirectories(t *testing.T) {
+	executorDir := t.TempDir()
+	archive := testArchive(t,
+		tarEntry{name: "./", mode: 0o755, typeflag: tar.TypeDir},
+		tarEntry{name: "./" + imageAsset, content: "image", mode: 0o644},
+		tarEntry{name: "./qemu/", mode: 0o755, typeflag: tar.TypeDir},
+		tarEntry{name: "./qemu/bin/", mode: 0o755, typeflag: tar.TypeDir},
+		tarEntry{name: "./qemu/bin/qemu-system-x86_64", content: "qemu", mode: 0o755},
+	)
+	server := archiveServer(archive)
+	defer server.Close()
+
+	if err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallOverlay, nil); err != nil {
+		t.Fatal(err)
+	}
+	assertFileContent(t, filepath.Join(executorDir, imageAsset), "image")
+	qemu := filepath.Join(executorDir, "qemu", "bin", "qemu-system-x86_64")
+	assertFileContent(t, qemu, "qemu")
+	info, err := os.Stat(qemu)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("QEMU mode = %v, want 0755", info.Mode().Perm())
+	}
+}
+
+// TestDownloadAssetsRejectsExistingSymlinkDirectory verifies nested installs stay inside the executor directory.
+func TestDownloadAssetsRejectsExistingSymlinkDirectory(t *testing.T) {
+	executorDir := t.TempDir()
+	outsideDir := t.TempDir()
+	if err := os.Symlink(outsideDir, filepath.Join(executorDir, "qemu")); err != nil {
+		t.Fatal(err)
+	}
+	archive := testArchive(t,
+		tarEntry{name: "qemu/bin/", mode: 0o755, typeflag: tar.TypeDir},
+		tarEntry{name: "qemu/bin/qemu-system-x86_64", content: "qemu", mode: 0o755},
+	)
+	server := archiveServer(archive)
+	defer server.Close()
+
+	err := DownloadAssets(context.Background(), AssetStorage{URL: server.URL, Folder: "assets"}, executorDir, AssetInstallOverlay, nil)
+	if err == nil || !strings.Contains(err.Error(), "existing non-directory") {
+		t.Fatalf("DownloadAssets() error = %v, want symlink conflict", err)
+	}
+	if _, err := os.Stat(filepath.Join(outsideDir, "bin", "qemu-system-x86_64")); !os.IsNotExist(err) {
+		t.Fatalf("outside file stat error = %v, want no file", err)
+	}
+}
+
 // TestDownloadAssetsCleanRemovesOldState verifies reset mode preserves only config before install.
 func TestDownloadAssetsCleanRemovesOldState(t *testing.T) {
 	executorDir := t.TempDir()
@@ -143,14 +194,13 @@ func TestDownloadAssetsFailureLeavesCleanTargetUntouched(t *testing.T) {
 	}
 }
 
-// TestDownloadAssetsRejectsUnsafeEntries verifies only regular root files are accepted.
+// TestDownloadAssetsRejectsUnsafeEntries verifies traversal and special entries are rejected.
 func TestDownloadAssetsRejectsUnsafeEntries(t *testing.T) {
 	for _, entry := range []tarEntry{
-		{name: "nested/file", content: "bad", mode: 0o644},
 		{name: "nested/../escape", content: "bad", mode: 0o644},
 		{name: "../escape", content: "bad", mode: 0o644},
 		{name: "/absolute", content: "bad", mode: 0o644},
-		{name: "folder", mode: 0o755, typeflag: tar.TypeDir},
+		{name: `..\escape`, content: "bad", mode: 0o644},
 		{name: "link", mode: 0o777, typeflag: tar.TypeSymlink, linkname: "target"},
 	} {
 		t.Run(strings.ReplaceAll(entry.name, "/", "_"), func(t *testing.T) {

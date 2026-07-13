@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -160,7 +161,7 @@ func prepareAssetArchive(ctx context.Context, storage AssetStorage, executorDir 
 	return stageDir, nil
 }
 
-// extractAssetArchive expands regular root files while rejecting unsafe tar entries.
+// extractAssetArchive expands regular files and directories while rejecting unsafe tar entries.
 func extractAssetArchive(archivePath, stageDir string) error {
 	archive, err := os.Open(archivePath)
 	if err != nil {
@@ -175,43 +176,101 @@ func extractAssetArchive(archivePath, stageDir string) error {
 	defer gzipReader.Close()
 
 	tarReader := tar.NewReader(gzipReader)
+	directoryModes := make(map[string]os.FileMode)
 	for {
 		header, err := tarReader.Next()
 		if err == io.EOF {
-			return nil
+			return applyDirectoryModes(directoryModes)
 		}
 		if err != nil {
 			return fmt.Errorf("extract VM assets archive: %w", err)
 		}
-		name, err := safeRootAssetName(header.Name)
+		name, err := safeAssetPath(header.Name)
 		if err != nil {
 			return fmt.Errorf("extract VM assets archive: %w", err)
-		}
-		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
-			return fmt.Errorf("extract VM assets archive: unsupported entry %q", header.Name)
 		}
 		if isProtectedAsset(name) {
 			continue
 		}
-		if err := extractAssetFile(tarReader, filepath.Join(stageDir, name), header.FileInfo().Mode().Perm()); err != nil {
-			return fmt.Errorf("extract VM assets archive %s: %w", name, err)
+
+		target := filepath.Join(stageDir, filepath.FromSlash(name))
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if name == "." {
+				continue
+			}
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return fmt.Errorf("extract VM assets archive %s: %w", name, err)
+			}
+			directoryModes[target] = archiveMode(header.FileInfo().Mode().Perm(), 0o755)
+		case tar.TypeReg, tar.TypeRegA:
+			if name == "." {
+				return fmt.Errorf("extract VM assets archive: unsupported entry %q", header.Name)
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return fmt.Errorf("extract VM assets archive %s: %w", name, err)
+			}
+			if err := extractAssetFile(tarReader, target, header.FileInfo().Mode().Perm()); err != nil {
+				return fmt.Errorf("extract VM assets archive %s: %w", name, err)
+			}
+		default:
+			return fmt.Errorf("extract VM assets archive: unsupported entry %q", header.Name)
 		}
 	}
 }
 
-// safeRootAssetName accepts only plain filenames at the archive root.
-func safeRootAssetName(name string) (string, error) {
-	if name == "" || name == "." || name == ".." || path.IsAbs(name) || strings.Contains(name, "/") {
+// safeAssetPath accepts relative tar paths, including the conventional leading "./".
+func safeAssetPath(name string) (string, error) {
+	if name == "" || path.IsAbs(name) || filepath.IsAbs(filepath.FromSlash(name)) || strings.Contains(name, `\`) {
 		return "", fmt.Errorf("unsafe archive entry %q", name)
 	}
-	return name, nil
+
+	parts := strings.Split(name, "/")
+	for len(parts) > 0 && parts[0] == "." {
+		parts = parts[1:]
+	}
+	for len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) == 0 {
+		return ".", nil
+	}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return "", fmt.Errorf("unsafe archive entry %q", name)
+		}
+	}
+	return path.Join(parts...), nil
+}
+
+// archiveMode supplies a usable default when an archive omits permission bits.
+func archiveMode(mode, fallback os.FileMode) os.FileMode {
+	if mode == 0 {
+		return fallback
+	}
+	return mode
+}
+
+// applyDirectoryModes restores directory permissions after all children are extracted.
+func applyDirectoryModes(modes map[string]os.FileMode) error {
+	paths := make([]string, 0, len(modes))
+	for path := range modes {
+		paths = append(paths, path)
+	}
+	sort.Slice(paths, func(i, j int) bool {
+		return strings.Count(paths[i], string(os.PathSeparator)) > strings.Count(paths[j], string(os.PathSeparator))
+	})
+	for _, path := range paths {
+		if err := os.Chmod(path, modes[path]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // extractAssetFile writes one staged archive member with ordinary permission bits only.
 func extractAssetFile(reader io.Reader, target string, mode os.FileMode) error {
-	if mode == 0 {
-		mode = 0o644
-	}
+	mode = archiveMode(mode, 0o644)
 	file, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {
 		return err
@@ -237,16 +296,62 @@ func installPreparedAssets(stageDir, executorDir string, mode AssetInstallMode) 
 			return err
 		}
 	}
-	entries, err := os.ReadDir(stageDir)
+
+	directoryModes := make(map[string]os.FileMode)
+	err := filepath.WalkDir(stageDir, func(source string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(stageDir, source)
+		if err != nil || relative == "." {
+			return err
+		}
+		target := filepath.Join(executorDir, relative)
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if err := ensureInstallDirectory(executorDir, relative); err != nil {
+				return err
+			}
+			directoryModes[target] = archiveMode(info.Mode().Perm(), 0o755)
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("prepared asset %q is not a regular file", relative)
+		}
+		if err := ensureInstallDirectory(executorDir, filepath.Dir(relative)); err != nil {
+			return err
+		}
+		return copyPreparedAsset(source, target, filepath.Dir(target))
+	})
 	if err != nil {
 		return err
 	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return fmt.Errorf("prepared asset %q is not a regular file", entry.Name())
+	return applyDirectoryModes(directoryModes)
+}
+
+// ensureInstallDirectory creates a nested destination without following existing symlinks.
+func ensureInstallDirectory(executorDir, relative string) error {
+	if relative == "." || relative == "" {
+		return nil
+	}
+	current := executorDir
+	for _, part := range strings.Split(filepath.Clean(relative), string(os.PathSeparator)) {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			if err := os.Mkdir(current, 0o755); err != nil {
+				return err
+			}
+			continue
 		}
-		if err := copyPreparedAsset(filepath.Join(stageDir, entry.Name()), filepath.Join(executorDir, entry.Name()), executorDir); err != nil {
+		if err != nil {
 			return err
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("prepared asset directory %q conflicts with an existing non-directory", relative)
 		}
 	}
 	return nil
