@@ -19,7 +19,7 @@ func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	}
 
 	executorDir := filepath.Join(home, ".executor")
-	runtimeDir := filepath.Join(home, ".executor_runtime")
+	runtimeDir := filepath.Join(executorDir, "run")
 	if cfg.ExecutorDir != executorDir {
 		t.Fatalf("ExecutorDir = %q, want %q", cfg.ExecutorDir, executorDir)
 	}

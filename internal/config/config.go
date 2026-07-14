@@ -145,7 +145,7 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	runtimeDir := filepath.Join(home, ".executor_runtime")
+	runtimeDir := filepath.Join(executorDir, "run")
 
 	cfg := Config{
 		Home:                 home,

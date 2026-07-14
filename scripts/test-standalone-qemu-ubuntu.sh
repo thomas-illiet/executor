@@ -150,8 +150,8 @@ verify_doctor() {
 # Launches the real Executor boot path and expects QEMU to keep running.
 verify_executor_boot() {
   boot_log="${temp_dir}/executor-boot.log"
-  qemu_pidfile="/home/coder/.executor_runtime/qemu.pid"
-  ssh_socket="/home/coder/.executor_runtime/ssh.sock"
+  qemu_pidfile="/home/coder/.executor/run/qemu.pid"
+  ssh_socket="/home/coder/.executor/run/ssh.sock"
   expected_qemu="${runtime_install_dir}/qemu/bin/qemu-system-x86_64.real"
   qemu_started=0
   log "Launching executor boot for ${boot_timeout}"

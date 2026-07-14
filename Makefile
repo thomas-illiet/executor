@@ -187,8 +187,8 @@ vm-secure-smoke: docker-build vm-asset-ready ## Exercise the restricted containe
 		$(IMAGE)
 	docker exec $(CONTAINER_NAME)-smoke sh -lc 'test "$$(id -u)" = "1000" && touch "$$HOME"/rw-ok && ! touch /usr/local/ro-test'
 	docker exec $(CONTAINER_NAME)-smoke executor init
-	docker exec $(CONTAINER_NAME)-smoke sh -lc 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ProxyCommand="nc -U $$HOME/.executor_runtime/ssh.sock" -i $$HOME/.executor/id_ed25519 coder@localhost true'
-	docker exec $(CONTAINER_NAME)-smoke sh -lc '! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ProxyCommand="nc -U $$HOME/.executor_runtime/ssh.sock" -i $$HOME/.executor/id_ed25519 root@localhost true'
+	docker exec $(CONTAINER_NAME)-smoke sh -lc 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ProxyCommand="nc -U $$HOME/.executor/run/ssh.sock" -i $$HOME/.executor/id_ed25519 coder@localhost true'
+	docker exec $(CONTAINER_NAME)-smoke sh -lc '! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ProxyCommand="nc -U $$HOME/.executor/run/ssh.sock" -i $$HOME/.executor/id_ed25519 root@localhost true'
 	docker exec $(CONTAINER_NAME)-smoke sh -lc '! ss -ltn | grep -E ":(2222|12343)[[:space:]]"'
 	docker exec $(CONTAINER_NAME)-smoke executor pull alpine:3.20
 	docker exec $(CONTAINER_NAME)-smoke executor run --rm alpine:3.20 echo secure-ok
