@@ -21,7 +21,8 @@ STANDALONE_ZIP ?= dist/release/executor-runtime-ubuntu24-amd64.zip
 STANDALONE_QEMU_IMAGE ?= debian:forky-slim
 STANDALONE_TEST_IMAGE ?= ubuntu:24.04
 STANDALONE_BOOT_TIMEOUT ?= 20s
-VM_ASSET_FILES := $(VM_ASSETS_DIR)/system.qcow2 $(VM_ASSETS_DIR)/vmlinuz-virt $(VM_ASSETS_DIR)/initramfs-virt $(VM_ASSETS_DIR)/id_ed25519 $(VM_ASSETS_DIR)/id_ed25519.pub
+VM_IMAGE_ASSET_FILES := $(VM_ASSETS_DIR)/system.qcow2 $(VM_ASSETS_DIR)/vmlinuz-virt $(VM_ASSETS_DIR)/initramfs-virt $(VM_ASSETS_DIR)/id_ed25519 $(VM_ASSETS_DIR)/id_ed25519.pub
+VM_QEMU_ASSET_FILES := $(VM_ASSETS_DIR)/bin/qemu-system-x86_64 $(VM_ASSETS_DIR)/bin/qemu-img
 
 # Host container run commands are intentionally pinned to x64. The local tooling
 # image carries amd64 QEMU packages and is expected to behave the same on arm64 hosts.
@@ -31,13 +32,14 @@ COMPOSE_ENV := IMAGE="$(IMAGE)" DOCKERFILE="$(DOCKERFILE)" WORKSPACE="$(WORKSPAC
 # KVM is enabled automatically when /dev/kvm exists on the host.
 KVM_ARGS ?= $(shell test -e /dev/kvm && echo --device /dev/kvm)
 
-# Secure defaults used by the VM container targets. They mirror a restricted
-# runtime: non-root user, read-only root filesystem, no extra capabilities, and
-# writable tmpfs mounts for the paths the app needs at runtime.
+# Secure defaults used only by the development/tooling container targets. The
+# `coder` account below belongs to that container and is not required on the host.
+# They mirror a restricted runtime: non-root user, read-only root filesystem, no
+# extra capabilities, and writable tmpfs mounts for required runtime paths.
 SECURE_RUN_ARGS ?= --read-only --user coder:coder --cap-drop ALL --security-opt no-new-privileges
-SECURE_TMPFS_ARGS ?= --tmpfs /home/coder:rw,nosuid,nodev,uid=1000,gid=1000,mode=700,size=8g --tmpfs /tmp:rw,nosuid,nodev,uid=1000,gid=1000,mode=1777,size=1g --tmpfs /run:rw,nosuid,nodev,uid=1000,gid=1000,mode=755,size=64m
+SECURE_TMPFS_ARGS ?= --tmpfs /home/coder:rw,exec,nosuid,nodev,uid=1000,gid=1000,mode=700,size=8g --tmpfs /tmp:rw,nosuid,nodev,uid=1000,gid=1000,mode=1777,size=1g --tmpfs /run:rw,nosuid,nodev,uid=1000,gid=1000,mode=755,size=64m
 
-.PHONY: build test tidy clean docker-tooling-build docker-build docker-smoke docker-shell vm-asset-ready vm-asset vm-asset-archive vm-config standalone-qemu-zip standalone-qemu-smoke vm-init vm-serve vm-exec vm-shutdown vm-secure-smoke help
+.PHONY: build test tidy clean docker-tooling-build docker-build docker-smoke docker-shell vm-image-assets-ready vm-asset-ready vm-asset vm-asset-archive vm-config standalone-qemu-zip standalone-qemu-smoke vm-init vm-serve vm-exec vm-shutdown vm-secure-smoke help
 
 ##@ Local development
 
@@ -62,20 +64,29 @@ docker-build: ## Build the local development/tooling image for PLATFORM.
 	docker buildx build --target dev --platform $(PLATFORM) -f $(DOCKERFILE) --load -t $(IMAGE) .
 
 docker-smoke: docker-build vm-asset-ready ## Verify the local tooling image starts executor.
-	$(COMPOSE_ENV) $(COMPOSE) -f $(COMPOSE_FILE) run --rm --no-deps $(COMPOSE_SERVICE) sh -lc 'executor --version && test -s /home/coder/.executor/system.qcow2 && test -s /home/coder/.executor/vmlinuz-virt && test -s /home/coder/.executor/initramfs-virt && test -s /home/coder/.executor/id_ed25519 && test -s /home/coder/.executor/id_ed25519.pub'
+	$(COMPOSE_ENV) $(COMPOSE) -f $(COMPOSE_FILE) run --rm --no-deps $(COMPOSE_SERVICE) sh -lc 'executor --version && test -s /home/coder/.executor/system.qcow2 && test -s /home/coder/.executor/vmlinuz-virt && test -s /home/coder/.executor/initramfs-virt && test -s /home/coder/.executor/id_ed25519 && test -s /home/coder/.executor/id_ed25519.pub && test -x /home/coder/.executor/bin/qemu-system-x86_64 && test -x /home/coder/.executor/bin/qemu-img'
 
 docker-shell: docker-build vm-asset-ready ## Open an interactive shell with workspace and VM assets mounted.
 	$(COMPOSE_ENV) $(COMPOSE) -f $(COMPOSE_FILE) run --rm --entrypoint /bin/bash $(COMPOSE_SERVICE)
 
 ##@ VM asset
 
-vm-asset-ready:
+vm-image-assets-ready:
 	@missing=0; \
-	for asset in $(VM_ASSET_FILES); do test -s "$$asset" || missing=1; done; \
+	for asset in $(VM_IMAGE_ASSET_FILES); do test -s "$$asset" || missing=1; done; \
 	if [ "$$missing" -eq 0 ]; then \
-		echo "Alpine VM assets already present in $(VM_ASSETS_DIR)."; \
+		echo "Alpine VM image assets already present in $(VM_ASSETS_DIR)."; \
 	else \
 		$(MAKE) vm-asset; \
+	fi
+
+vm-asset-ready: vm-image-assets-ready
+	@missing=0; \
+	for asset in $(VM_QEMU_ASSET_FILES); do test -x "$$asset" || missing=1; done; \
+	if [ "$$missing" -eq 0 ]; then \
+		echo "Bundled QEMU assets already present in $(VM_ASSETS_DIR)."; \
+	else \
+		$(MAKE) standalone-qemu-zip VM_ASSETS_DIR="$(VM_ASSETS_DIR)"; \
 	fi
 
 vm-asset: docker-tooling-build ## Generate Alpine VM assets using the local tooling image.
@@ -88,17 +99,10 @@ vm-asset: docker-tooling-build ## Generate Alpine VM assets using the local tool
 
 vm-asset-archive: vm-asset-ready ## Package all root VM asset files into one tar.gz archive.
 	@mkdir -p "$(dir $(VM_ASSET_ARCHIVE))"
-	@set --; \
-	for asset in "$(VM_ASSETS_DIR)"/*; do \
-		test -f "$$asset" || continue; \
-		name=$$(basename "$$asset"); \
-		case "$$name" in config.yaml|data.qcow2|$(notdir $(VM_ASSET_ARCHIVE))) continue ;; esac; \
-		set -- "$$@" "$$name"; \
-	done; \
-	test "$$#" -gt 0 || { echo "No VM asset files found in $(VM_ASSETS_DIR)." >&2; exit 1; }; \
+	@test -s "$(VM_ASSETS_DIR)/system.qcow2" || { echo "No VM assets found in $(VM_ASSETS_DIR)." >&2; exit 1; }; \
 	tmp="$(VM_ASSET_ARCHIVE).tmp"; \
 	rm -f "$$tmp"; \
-	tar -czf "$$tmp" -C "$(VM_ASSETS_DIR)" "$$@"; \
+	tar -czf "$$tmp" --exclude='./config.yaml' --exclude='./data.qcow2' -C "$(VM_ASSETS_DIR)" .; \
 	mv "$$tmp" "$(VM_ASSET_ARCHIVE)"; \
 	echo "VM asset archive ready: $(VM_ASSET_ARCHIVE)"
 
@@ -107,7 +111,6 @@ vm-config: ## Create an optional mounted executor config when explicitly request
 	@if [ ! -f "$(VM_CONFIG_FILE)" ]; then \
 		{ \
 			printf '%s\n' 'qemu:'; \
-			printf '%s\n' '  binary: qemu-system-x86_64'; \
 			printf '%s\n' '  accel: auto'; \
 			printf '%s\n' '  io_profile: max'; \
 			printf '%s\n' '  memory_mib: 4096'; \
@@ -116,8 +119,6 @@ vm-config: ## Create an optional mounted executor config when explicitly request
 			printf '%s\n' 'guest_arch: amd64'; \
 			printf '%s\n' 'podman:'; \
 			printf '%s\n' '  registry_mirror: ""'; \
-			printf '%s\n' '  data_root: /home/coder/.local/share/containers'; \
-			printf '%s\n' '  disk_image: /home/coder/.executor/data.qcow2'; \
 			printf '%s\n' '  disk_size: 10G'; \
 			printf '%s\n' '  storage_driver: overlay'; \
 			printf '%s\n' 'storage:'; \
@@ -176,7 +177,8 @@ vm-secure-smoke: docker-build vm-asset-ready ## Exercise the restricted containe
 	docker rm -f $(CONTAINER_NAME)-smoke >/dev/null 2>&1 || true
 	rm -rf "$(VM_SMOKE_ASSETS_DIR)"
 	mkdir -p "$(VM_SMOKE_ASSETS_DIR)"
-	for asset in system.qcow2 vmlinuz-virt initramfs-virt id_ed25519 id_ed25519.pub; do cp "$(VM_ASSETS_DIR)/$$asset" "$(VM_SMOKE_ASSETS_DIR)/$$asset"; done
+	cp -a "$(VM_ASSETS_DIR)/." "$(VM_SMOKE_ASSETS_DIR)/"
+	rm -f "$(VM_SMOKE_ASSETS_DIR)/config.yaml" "$(VM_SMOKE_ASSETS_DIR)/data.qcow2"
 	if [ -f "$(VM_CONFIG_FILE)" ]; then cp "$(VM_CONFIG_FILE)" "$(VM_SMOKE_ASSETS_DIR)/config.yaml"; fi
 	docker run --name $(CONTAINER_NAME)-smoke --rm -d --platform $(DOCKER_RUN_PLATFORM) \
 		$(SECURE_RUN_ARGS) \

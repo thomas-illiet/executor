@@ -29,11 +29,11 @@ func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	if cfg.QEMUPIDFile != filepath.Join(runtimeDir, "qemu.pid") {
 		t.Fatalf("QEMUPIDFile = %q, want default pidfile", cfg.QEMUPIDFile)
 	}
-	if cfg.PodmanDataDir != defaultPodmanDataRoot {
+	if cfg.PodmanDataDir != defaultGuestPodmanDataRoot {
 		t.Fatalf("PodmanDataDir = %q, want default Podman data root", cfg.PodmanDataDir)
 	}
-	if cfg.PodmanDiskImage != defaultPodmanDiskImage {
-		t.Fatalf("PodmanDiskImage = %q, want default Podman disk image", cfg.PodmanDiskImage)
+	if cfg.PodmanDiskImage != filepath.Join(executorDir, defaultPodmanDiskFileName) {
+		t.Fatalf("PodmanDiskImage = %q, want home-derived Podman disk image", cfg.PodmanDiskImage)
 	}
 	if cfg.PodmanDiskSize != defaultPodmanDiskSize {
 		t.Fatalf("PodmanDiskSize = %q, want default Podman disk size", cfg.PodmanDiskSize)
@@ -49,6 +49,12 @@ func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	}
 	if cfg.QEMUIOProfile != "max" || cfg.DiskCache != "unsafe" || cfg.DiskAIO != "threads" {
 		t.Fatalf("I/O options = profile:%q cache:%q aio:%q, want max/unsafe/threads", cfg.QEMUIOProfile, cfg.DiskCache, cfg.DiskAIO)
+	}
+	if cfg.QEMUBinary != filepath.Join(executorDir, "bin", "qemu-system-x86_64") {
+		t.Fatalf("QEMUBinary = %q, want bundled QEMU path", cfg.QEMUBinary)
+	}
+	if cfg.QEMUImgBinary != filepath.Join(executorDir, "bin", "qemu-img") {
+		t.Fatalf("QEMUImgBinary = %q, want bundled qemu-img path", cfg.QEMUImgBinary)
 	}
 	if cfg.HostShare != "9p" {
 		t.Fatalf("HostShare = %q, want 9p", cfg.HostShare)
@@ -70,7 +76,7 @@ func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	}
 }
 
-// TestLoadReadsConfigFile verifies user config overrides defaults.
+// TestLoadReadsConfigFile verifies mutable config is honored and legacy paths are ignored.
 func TestLoadReadsConfigFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -111,8 +117,11 @@ timeouts:
 		t.Fatal(err)
 	}
 
-	if cfg.QEMUBinary != filepath.Join(executorDir, "tools/qemu-system-x86_64") {
-		t.Fatalf("QEMUBinary = %q, want relative path resolved under executor dir", cfg.QEMUBinary)
+	if cfg.QEMUBinary != filepath.Join(executorDir, "bin", "qemu-system-x86_64") {
+		t.Fatalf("QEMUBinary = %q, want fixed bundled path", cfg.QEMUBinary)
+	}
+	if cfg.QEMUImgBinary != filepath.Join(executorDir, "bin", "qemu-img") {
+		t.Fatalf("QEMUImgBinary = %q, want fixed bundled path", cfg.QEMUImgBinary)
 	}
 	if cfg.QEMUAccel != "tcg,thread=multi" {
 		t.Fatalf("QEMUAccel = %q, want override", cfg.QEMUAccel)
@@ -129,11 +138,11 @@ timeouts:
 	if cfg.PodmanRegistryMirror != "https://mirror.example.invalid" {
 		t.Fatalf("PodmanRegistryMirror = %q, want mirror override", cfg.PodmanRegistryMirror)
 	}
-	if cfg.PodmanDataDir != "/data/podman" {
-		t.Fatalf("PodmanDataDir = %q, want config override", cfg.PodmanDataDir)
+	if cfg.PodmanDataDir != defaultGuestPodmanDataRoot {
+		t.Fatalf("PodmanDataDir = %q, want fixed guest data root", cfg.PodmanDataDir)
 	}
-	if cfg.PodmanDiskImage != filepath.Join(executorDir, "disks/data.qcow2") {
-		t.Fatalf("PodmanDiskImage = %q, want relative path resolved under executor dir", cfg.PodmanDiskImage)
+	if cfg.PodmanDiskImage != filepath.Join(executorDir, defaultPodmanDiskFileName) {
+		t.Fatalf("PodmanDiskImage = %q, want fixed home-derived path", cfg.PodmanDiskImage)
 	}
 	if cfg.PodmanDiskSize != "25G" {
 		t.Fatalf("PodmanDiskSize = %q, want config override", cfg.PodmanDiskSize)
@@ -172,7 +181,7 @@ func TestLoadIgnoresExecutorEnvironment(t *testing.T) {
 	if cfg.QEMUIOProfile != "max" {
 		t.Fatalf("QEMUIOProfile = %q, want default", cfg.QEMUIOProfile)
 	}
-	if cfg.PodmanDataDir != defaultPodmanDataRoot {
+	if cfg.PodmanDataDir != defaultGuestPodmanDataRoot {
 		t.Fatalf("PodmanDataDir = %q, want default", cfg.PodmanDataDir)
 	}
 	if cfg.PodmanRegistryMirror != defaultPodmanRegistryMirror {
@@ -205,11 +214,11 @@ podman:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.PodmanDataDir != "/data/podman" {
-		t.Fatalf("PodmanDataDir = %q, want podman config to be used", cfg.PodmanDataDir)
+	if cfg.PodmanDataDir != defaultGuestPodmanDataRoot {
+		t.Fatalf("PodmanDataDir = %q, want legacy path ignored", cfg.PodmanDataDir)
 	}
-	if cfg.PodmanDiskImage != filepath.Join(executorDir, "disks/data.qcow2") {
-		t.Fatalf("PodmanDiskImage = %q, want relative Podman disk path resolved", cfg.PodmanDiskImage)
+	if cfg.PodmanDiskImage != filepath.Join(executorDir, defaultPodmanDiskFileName) {
+		t.Fatalf("PodmanDiskImage = %q, want fixed home-derived path", cfg.PodmanDiskImage)
 	}
 	if cfg.PodmanDiskSize != "25G" {
 		t.Fatalf("PodmanDiskSize = %q, want podman config to be used", cfg.PodmanDiskSize)

@@ -45,6 +45,8 @@ type AssetPaths struct {
 	Initrd       string
 	SSHKey       string
 	SSHPublicKey string
+	QEMU         string
+	QEMUImg      string
 }
 
 // DownloadAssets downloads, prepares, and installs the VM asset archive.
@@ -87,18 +89,21 @@ func (paths AssetPaths) publicKey() string {
 // missingAssets returns the required VM asset names whose files are absent.
 func missingAssets(paths AssetPaths) []string {
 	required := []struct {
-		name string
-		path string
+		name       string
+		path       string
+		executable bool
 	}{
 		{name: imageAsset, path: paths.Image},
 		{name: kernelAsset, path: paths.Kernel},
 		{name: initrdAsset, path: paths.Initrd},
 		{name: sshKeyAsset, path: paths.SSHKey},
 		{name: sshPublicKeyAsset, path: paths.publicKey()},
+		{name: "bin/qemu-system-x86_64", path: paths.QEMU, executable: true},
+		{name: "bin/qemu-img", path: paths.QEMUImg, executable: true},
 	}
 	var missing []string
 	for _, asset := range required {
-		if !exists(asset.path) {
+		if !exists(asset.path) || asset.executable && !isExecutable(asset.path) {
 			missing = append(missing, asset.name)
 		}
 	}
@@ -450,4 +455,10 @@ func buildAssetArchiveURL(storage AssetStorage) (string, error) {
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// isExecutable reports whether the path is a regular file with an execute bit.
+func isExecutable(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0
 }

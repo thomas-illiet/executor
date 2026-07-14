@@ -244,16 +244,19 @@ func TestInitSkipsDownloadWhenAssetsExist(t *testing.T) {
 		KernelImage:   filepath.Join(dir, "vmlinuz-virt"),
 		InitrdImage:   filepath.Join(dir, "initramfs-virt"),
 		SSHKeyPath:    filepath.Join(dir, "id_ed25519"),
-		QEMUBinary:    "qemu-system-x86_64",
+		QEMUBinary:    filepath.Join(dir, "bin", "qemu-system-x86_64"),
+		QEMUImgBinary: filepath.Join(dir, "bin", "qemu-img"),
 		QEMUPIDFile:   filepath.Join(dir, "qemu.pid"),
 		SSHSocket:     filepath.Join(dir, "executorssh.sock"),
 		MonitorSocket: filepath.Join(dir, "monitorssh.sock"),
 	}
 	if err := writeTestAssets(vm.AssetPaths{
-		Image:  cfg.VMImage,
-		Kernel: cfg.KernelImage,
-		Initrd: cfg.InitrdImage,
-		SSHKey: cfg.SSHKeyPath,
+		Image:   cfg.VMImage,
+		Kernel:  cfg.KernelImage,
+		Initrd:  cfg.InitrdImage,
+		SSHKey:  cfg.SSHKeyPath,
+		QEMU:    cfg.QEMUBinary,
+		QEMUImg: cfg.QEMUImgBinary,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -297,10 +300,12 @@ func TestResetDownloadsAssetsAndRemovesPodmanDisk(t *testing.T) {
 		downloadCalls++
 		downloadMode = mode
 		return writeTestAssets(vm.AssetPaths{
-			Image:  vmImage,
-			Kernel: filepath.Join(dir, "vmlinuz-virt"),
-			Initrd: filepath.Join(dir, "initramfs-virt"),
-			SSHKey: filepath.Join(dir, "id_ed25519"),
+			Image:   vmImage,
+			Kernel:  filepath.Join(dir, "vmlinuz-virt"),
+			Initrd:  filepath.Join(dir, "initramfs-virt"),
+			SSHKey:  filepath.Join(dir, "id_ed25519"),
+			QEMU:    filepath.Join(dir, "bin", "qemu-system-x86_64"),
+			QEMUImg: filepath.Join(dir, "bin", "qemu-img"),
 		})
 	})
 	runner := &recordingRunner{}
@@ -311,6 +316,8 @@ func TestResetDownloadsAssetsAndRemovesPodmanDisk(t *testing.T) {
 		KernelImage:     dir + "/vmlinuz-virt",
 		InitrdImage:     dir + "/initramfs-virt",
 		SSHKeyPath:      dir + "/id_ed25519",
+		QEMUBinary:      filepath.Join(dir, "bin", "qemu-system-x86_64"),
+		QEMUImgBinary:   filepath.Join(dir, "bin", "qemu-img"),
 		QEMUPIDFile:     pidfile,
 	}
 	app := App{
@@ -336,6 +343,15 @@ func TestResetDownloadsAssetsAndRemovesPodmanDisk(t *testing.T) {
 	}
 	if _, err := os.Stat(podmanDisk); !os.IsNotExist(err) {
 		t.Fatalf("Podman disk still exists or stat failed: %v", err)
+	}
+	for _, binary := range []string{cfg.QEMUBinary, cfg.QEMUImgBinary} {
+		info, err := os.Stat(binary)
+		if err != nil {
+			t.Fatalf("bundled QEMU asset was not restored: %v", err)
+		}
+		if info.Mode().Perm()&0o111 == 0 {
+			t.Fatalf("restored QEMU asset %s is not executable", binary)
+		}
 	}
 }
 
@@ -700,7 +716,12 @@ func writeTestAssets(paths vm.AssetPaths) error {
 		{path: paths.Initrd, mode: 0o644},
 		{path: paths.SSHKey, mode: 0o600},
 		{path: publicKey, mode: 0o644},
+		{path: paths.QEMU, mode: 0o755},
+		{path: paths.QEMUImg, mode: 0o755},
 	} {
+		if asset.path == "" {
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(asset.path), 0o755); err != nil {
 			return err
 		}

@@ -12,15 +12,16 @@ import (
 
 const (
 	podmanDataDevice = "/dev/vdb"
+	GuestHomeDir     = "/home/coder"
 	PodmanRuntimeDir = "/run/user/1000"
-	PodmanAuthFile   = "/home/coder/.config/containers/auth.json"
+	PodmanAuthFile   = GuestHomeDir + "/.config/containers/auth.json"
 )
 
 // GuestWorkDir is the fixed mount point for the host working directory.
 // Mounting only this subdirectory preserves the rest of the guest home.
-const GuestWorkDir = "/home/coder/workspace"
+const GuestWorkDir = GuestHomeDir + "/workspace"
 
-const podmanConfigDir = "/home/coder/.config/containers"
+const podmanConfigDir = GuestHomeDir + "/.config/containers"
 
 // ConfigurePodman writes rootless Podman configuration and verifies Podman in the VM.
 func (m Manager) ConfigurePodman(ctx context.Context, creds Credentials) error {

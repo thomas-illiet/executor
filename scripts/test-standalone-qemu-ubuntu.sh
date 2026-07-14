@@ -6,6 +6,8 @@ assets_dir="${VM_ASSETS_DIR:-${workspace}/dist/output}"
 runtime_install_dir="${EXECUTOR_RUNTIME_INSTALL_DIR:-/opt/executor-runtime}"
 runtime_zip="${EXECUTOR_STANDALONE_ZIP:-${workspace}/dist/release/executor-runtime-ubuntu24-amd64.zip}"
 runtime_dir_name="${EXECUTOR_STANDALONE_DIR_NAME:-executor-runtime}"
+runtime_home="${EXECUTOR_STANDALONE_TEST_HOME:-/home/executor}"
+executor_dir="${runtime_home}/.executor"
 test_image="${EXECUTOR_STANDALONE_TEST_IMAGE:-ubuntu:24.04}"
 test_platform="${EXECUTOR_QEMU_PLATFORM:-linux/amd64}"
 boot_timeout="${EXECUTOR_STANDALONE_BOOT_TIMEOUT:-20s}"
@@ -50,7 +52,7 @@ check_inputs() {
     *) fail "runtime install directory must be absolute: ${runtime_install_dir}" ;;
   esac
   test -s "${runtime_zip}" || fail "missing runtime bundle: ${runtime_zip}"
-  for asset in config.yaml system.qcow2 vmlinuz-virt initramfs-virt id_ed25519 id_ed25519.pub; do
+  for asset in config.yaml system.qcow2 vmlinuz-virt initramfs-virt id_ed25519 id_ed25519.pub bin/qemu-system-x86_64 bin/qemu-img; do
     test -s "${assets_dir}/${asset}" || fail "missing runtime asset: ${assets_dir}/${asset}"
   done
 }
@@ -60,7 +62,7 @@ extract_bundle() {
   temp_dir="$(mktemp -d)"
   unzip -q "${runtime_zip}" -d "${temp_dir}"
   test -x "${temp_dir}/${runtime_dir_name}/executor" || fail "bundle does not contain executor"
-  test -x "${temp_dir}/${runtime_dir_name}/qemu/bin/qemu-system-x86_64" || fail "bundle does not contain QEMU"
+  test -x "${assets_dir}/bin/qemu-system-x86_64" || fail "runtime assets do not contain QEMU"
 }
 
 # Starts an untouched Ubuntu container with no package installation or Linux
@@ -74,8 +76,8 @@ start_vanilla_container() {
     --user 1000:1000 \
     --cap-drop ALL \
     --security-opt no-new-privileges \
-    --tmpfs /home/coder:rw,nosuid,nodev,uid=1000,gid=1000,mode=700 \
-    --env HOME=/home/coder \
+    --tmpfs "${runtime_home}:rw,exec,nosuid,nodev,uid=1000,gid=1000,mode=700" \
+    --env "HOME=${runtime_home}" \
     "${test_image}" \
     sleep infinity \
     >/dev/null
@@ -88,32 +90,29 @@ install_runtime() {
   staged_assets_dir="${temp_dir}/runtime-assets"
   log "Copying Executor and bundled QEMU to ${runtime_install_dir}"
   mkdir -p "${staged_assets_dir}"
-  docker exec --user 0:0 "${container_name}" mkdir -p "${runtime_parent}" /tmp/executor-assets
+  cp -a "${assets_dir}/." "${staged_assets_dir}/"
+  chmod 0644 "${staged_assets_dir}/id_ed25519"
+  docker exec --user 0:0 "${container_name}" mkdir -p "${runtime_parent}"
+  docker exec --user 1000:1000 "${container_name}" mkdir -p "${executor_dir}"
   docker cp "${temp_dir}/${runtime_dir_name}" "${container_name}:${runtime_install_dir}"
-  docker exec --user 1000:1000 "${container_name}" mkdir -p /home/coder/.executor
-  for asset in config.yaml system.qcow2 vmlinuz-virt initramfs-virt id_ed25519 id_ed25519.pub; do
-    cp "${assets_dir}/${asset}" "${staged_assets_dir}/${asset}"
-    chmod 0644 "${staged_assets_dir}/${asset}"
-    docker cp "${staged_assets_dir}/${asset}" "${container_name}:/tmp/executor-assets/${asset}"
-    docker exec --user 1000:1000 "${container_name}" \
-      cp "/tmp/executor-assets/${asset}" "/home/coder/.executor/${asset}"
-  done
-  docker exec --user 1000:1000 "${container_name}" chmod 0600 /home/coder/.executor/id_ed25519
+  docker cp "${staged_assets_dir}" "${container_name}:/tmp/runtime-assets"
+  docker exec --user 1000:1000 "${container_name}" cp -a /tmp/runtime-assets/. "${executor_dir}/"
+  docker exec --user 1000:1000 "${container_name}" chmod 0600 "${executor_dir}/id_ed25519"
 }
 
 # Runs a raw command in the container with the expected HOME.
 container_exec() {
   docker exec \
-    --env HOME=/home/coder \
+    --env "HOME=${runtime_home}" \
     "${container_name}" \
     "$@"
 }
 
-# Sources the shipped environment and runs a command as the coder user.
+# Sources the compatibility environment and runs as an unprivileged host user.
 runtime_exec() {
   docker exec \
     --user 1000:1000 \
-    --env HOME=/home/coder \
+    --env "HOME=${runtime_home}" \
     "${container_name}" \
     sh -c '. "$1/env.sh"; shift; exec "$@"' \
     sh "${runtime_install_dir}" "$@"
@@ -141,8 +140,6 @@ verify_doctor() {
     sh -c '! command -v qemu-system-x86_64 >/dev/null 2>&1 && ! command -v qemu-img >/dev/null 2>&1'
   log "ok: vanilla Ubuntu contains no system QEMU"
   [ "$(runtime_exec id -u)" = "1000" ] || fail "runtime is not running as uid 1000"
-  qemu_img_path="$(runtime_exec sh -c 'command -v qemu-img')"
-  [ "${qemu_img_path}" = "${runtime_install_dir}/qemu/bin/qemu-img" ] || fail "env.sh does not select bundled qemu-img"
   runtime_exec "${runtime_install_dir}/doctor.sh"
   runtime_exec "${runtime_install_dir}/executor" --version
 }
@@ -150,9 +147,9 @@ verify_doctor() {
 # Launches the real Executor boot path and expects QEMU to keep running.
 verify_executor_boot() {
   boot_log="${temp_dir}/executor-boot.log"
-  qemu_pidfile="/home/coder/.executor/run/qemu.pid"
-  ssh_socket="/home/coder/.executor/run/ssh.sock"
-  expected_qemu="${runtime_install_dir}/qemu/bin/qemu-system-x86_64.real"
+  qemu_pidfile="${executor_dir}/run/qemu.pid"
+  ssh_socket="${executor_dir}/run/ssh.sock"
+  expected_qemu="${executor_dir}/bin/qemu-system-x86_64.real"
   qemu_started=0
   log "Launching executor boot for ${boot_timeout}"
 

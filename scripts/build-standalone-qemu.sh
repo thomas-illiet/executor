@@ -15,7 +15,6 @@ zip_path="${EXECUTOR_STANDALONE_ZIP:-${release_dir}/executor-runtime-ubuntu24-am
 version="${EXECUTOR_VERSION:-}"
 
 runtime_dir="${stage_dir}/${runtime_dir_name}"
-qemu_dir="${runtime_dir}/qemu"
 qemu_build_script="${stage_dir}/build-qemu-bundle.sh"
 
 # Prints a clear build step message.
@@ -51,7 +50,7 @@ check_host_tools() {
 prepare_stage() {
   mkdir -p "${release_dir}" "${assets_dir}"
   rm -rf "${stage_dir}"
-  mkdir -p "${runtime_dir}" "${qemu_dir}"
+  mkdir -p "${runtime_dir}"
 }
 
 # Builds the real linux/amd64 executor binary into the static runtime folder.
@@ -68,10 +67,10 @@ build_executor() {
   chmod 755 "${runtime_dir}/executor"
 }
 
-# Generates or reuses the VM data files that belong in /home/coder/.executor.
+# Generates or reuses the VM data files that belong in the runtime user's home.
 generate_vm_assets() {
   log "Generating VM runtime assets in ${assets_dir}"
-  make -C "${workspace}" vm-asset-ready VM_ASSETS_DIR="${assets_dir}"
+  make -C "${workspace}" vm-image-assets-ready VM_ASSETS_DIR="${assets_dir}"
 }
 
 # Writes the runtime config next to the VM assets, not inside the static zip.
@@ -79,7 +78,6 @@ write_runtime_config() {
   log "Writing runtime config in ${assets_dir}/config.yaml"
   cat > "${assets_dir}/config.yaml" <<EOF
 qemu:
-  binary: ${runtime_install_dir}/qemu/bin/qemu-system-x86_64
   accel: auto
   io_profile: max
   memory_mib: 4096
@@ -88,8 +86,6 @@ host_share: 9p
 guest_arch: amd64
 podman:
   registry_mirror: ""
-  data_root: /home/coder/.local/share/containers
-  disk_image: /home/coder/.executor/data.qcow2
   disk_size: 10G
   storage_driver: overlay
 storage:
@@ -121,7 +117,9 @@ install_qemu_packages() {
 # Prepares the output layout consumed by the outer zip packager.
 prepare_output_tree() {
   out="${QEMU_OUT}"
-  rm -rf "${out:?}/"*
+
+  rm -rf "${out:?}/bin" "${out}/lib" "${out}/share"
+  rm -f "${out}/QEMU_VERSION" "${out}/QEMU_IMG_VERSION"
   mkdir -p "${out}/bin" "${out}/lib" "${out}/lib/qemu" "${out}/share/qemu"
 }
 
@@ -270,8 +268,9 @@ build_qemu_bundle() {
   docker run --rm --platform "${qemu_platform}" \
     -e HOST_UID="$(id -u)" \
     -e HOST_GID="$(id -g)" \
-    -e QEMU_OUT="/work/${runtime_dir_name}/qemu" \
+    -e QEMU_OUT="/qemu-assets" \
     -v "${stage_dir}:/work" \
+    -v "${assets_dir}:/qemu-assets" \
     "${qemu_image}" \
     bash "/work/$(basename "${qemu_build_script}")"
 }
@@ -280,11 +279,11 @@ build_qemu_bundle() {
 verify_qemu_host_forwarding() {
   log "Verifying bundled QEMU in vanilla ${qemu_test_image}"
   docker run --rm --platform "${qemu_platform}" \
-    -v "${runtime_dir}:${runtime_install_dir}:ro" \
+    -v "${assets_dir}:/home/executor/.executor:ro" \
     "${qemu_test_image}" \
-    bash -s -- "${runtime_install_dir}" <<'EOF'
+    bash -s -- "/home/executor/.executor" <<'EOF'
 set -euo pipefail
-runtime_dir="$1"
+executor_dir="$1"
 test ! -e /usr/bin/qemu-system-x86_64
 test ! -e /usr/bin/qemu-img
 probe_dir="$(mktemp -d)"
@@ -295,7 +294,7 @@ cleanup() {
   rm -rf "${probe_dir}"
 }
 trap cleanup EXIT
-"${runtime_dir}/qemu/bin/qemu-system-x86_64" \
+"${executor_dir}/bin/qemu-system-x86_64" \
   -nodefaults \
   -display none \
   -S \
@@ -311,36 +310,39 @@ validate_outputs() {
   for asset in system.qcow2 vmlinuz-virt initramfs-virt id_ed25519 id_ed25519.pub config.yaml; do
     test -s "${assets_dir}/${asset}"
   done
-  for file in executor qemu/bin/qemu-system-x86_64 qemu/bin/qemu-system-x86_64.real qemu/bin/qemu-img qemu/bin/qemu-img.real; do
-    test -x "${runtime_dir}/${file}"
+  test -x "${runtime_dir}/executor"
+  for file in bin/qemu-system-x86_64 bin/qemu-system-x86_64.real bin/qemu-img bin/qemu-img.real; do
+    test -x "${assets_dir}/${file}"
   done
-  test -d "${runtime_dir}/qemu/lib/qemu"
-  test -d "${runtime_dir}/qemu/share/qemu"
+  test -d "${assets_dir}/lib/qemu"
+  test -d "${assets_dir}/share/qemu"
 }
 
 # Writes a manifest that documents install paths and bundle contents.
 write_manifest() {
   {
     printf 'static_install_dir=%s\n' "${runtime_install_dir}"
-    printf 'runtime_state_dir=%s\n' '/home/coder/.executor'
+    printf 'runtime_state_dir=%s\n' '$HOME/.executor'
     printf 'qemu_image=%s\n' "${qemu_image}"
     printf 'qemu_platform=%s\n' "${qemu_platform}"
-    printf '\n'
+    printf '\nstatic_files:\n'
     (
       cd "${runtime_dir}"
+      find . -mindepth 1 -print | sort | sed 's#^\./##'
+    )
+    printf '\nruntime_assets:\n'
+    (
+      cd "${assets_dir}"
       find . -mindepth 1 -print | sort | sed 's#^\./##'
     )
   } > "${runtime_dir}/MANIFEST.txt"
 }
 
-# Writes a small environment helper for shells and service units.
+# Writes a compatibility helper; Executor no longer needs PATH customization.
 write_env_file() {
   cat > "${runtime_dir}/env.sh" <<EOF
-# Source this file before running executor from ${runtime_install_dir}.
-#
-# executor reads runtime state from \$HOME/.executor, so run as the coder user
-# or export HOME=/home/coder when the runtime state lives there.
-export PATH="${runtime_install_dir}/qemu/bin:\${PATH}"
+# Executor derives all runtime paths from the current user's home directory.
+# No PATH or QEMU environment override is required.
 EOF
 }
 
@@ -351,8 +353,9 @@ write_doctor_script() {
 set -eu
 
 runtime_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-expected_qemu="${runtime_dir}/qemu/bin/qemu-system-x86_64"
-config_path="${HOME:-}/.executor/config.yaml"
+executor_dir="${HOME:-}/.executor"
+expected_qemu="${executor_dir}/bin/qemu-system-x86_64"
+expected_qemu_img="${executor_dir}/bin/qemu-img"
 
 fail() {
   echo "error: $*" >&2
@@ -361,33 +364,23 @@ fail() {
 
 echo "HOME=${HOME:-}"
 echo "runtime_dir=${runtime_dir}"
+echo "executor_dir=${executor_dir}"
 echo "expected_qemu=${expected_qemu}"
 
 [ -n "${HOME:-}" ] || fail "HOME is not set"
-[ -f "${config_path}" ] || fail "missing config: ${config_path}"
 [ -x "${expected_qemu}" ] || fail "missing bundled QEMU wrapper: ${expected_qemu}"
+[ -x "${expected_qemu_img}" ] || fail "missing bundled qemu-img wrapper: ${expected_qemu_img}"
 
-configured_qemu="$(awk '
-  $1 == "binary:" { print $2; exit }
-' "${config_path}")"
-
-echo "config_path=${config_path}"
-echo "configured_qemu=${configured_qemu}"
-echo "qemu_img=$(command -v qemu-img 2>/dev/null || true)"
-
-[ "${configured_qemu}" = "${expected_qemu}" ] || fail "config qemu.binary does not point to bundled QEMU"
-command -v qemu-img >/dev/null 2>&1 || fail "qemu-img is not on PATH; source ${runtime_dir}/env.sh first"
-
-"${configured_qemu}" --version | head -n 1
-qemu-img --version | head -n 1
-if [ -x "${runtime_dir}/qemu/lib/ld-linux-x86-64.so.2" ]; then
-  "${runtime_dir}/qemu/lib/ld-linux-x86-64.so.2" \
-    --library-path "${runtime_dir}/qemu/lib" \
-    --list "${runtime_dir}/qemu/bin/qemu-system-x86_64.real" \
+"${expected_qemu}" --version | head -n 1
+"${expected_qemu_img}" --version | head -n 1
+if [ -x "${executor_dir}/lib/ld-linux-x86-64.so.2" ]; then
+  "${executor_dir}/lib/ld-linux-x86-64.so.2" \
+    --library-path "${executor_dir}/lib" \
+    --list "${executor_dir}/bin/qemu-system-x86_64.real" \
     | awk '/libslirp/ { print "libslirp=" $3; found=1 } END { exit found ? 0 : 1 }'
 else
-  LD_LIBRARY_PATH="${runtime_dir}/qemu/lib" \
-    ldd "${runtime_dir}/qemu/bin/qemu-system-x86_64.real" \
+  LD_LIBRARY_PATH="${executor_dir}/lib" \
+    ldd "${executor_dir}/bin/qemu-system-x86_64.real" \
     | awk '/libslirp/ { print "libslirp=" $3; found=1 } END { exit found ? 0 : 1 }'
 fi
 
@@ -400,7 +393,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"${configured_qemu}" \
+"${expected_qemu}" \
   -nodefaults \
   -display none \
   -S \
@@ -426,30 +419,27 @@ Static files from this archive are expected at:
 
 Runtime state files are expected at:
 
-  /home/coder/.executor
+  \$HOME/.executor
 
-Before running executor, make sure the process sees the runtime state as
-\$HOME/.executor and can find bundled qemu-img:
+Executor always uses the current user's home directory. Install the VM assets
+and bundled QEMU below that user's \$HOME/.executor, then run:
 
-  export HOME=/home/coder
-  . ${runtime_install_dir}/env.sh
   ${runtime_install_dir}/executor init
 
 If executor reports that QEMU does not support Unix socket host forwarding, it
 is almost always launching the wrong QEMU binary. Check:
 
-  grep -A5 '^qemu:' "\$HOME/.executor/config.yaml"
-  "${runtime_install_dir}/qemu/bin/qemu-system-x86_64" --version
-  command -v qemu-img
+  "\$HOME/.executor/bin/qemu-system-x86_64" --version
+  "\$HOME/.executor/bin/qemu-img" --version
   ${runtime_install_dir}/doctor.sh
 
-The config should contain:
+The QEMU paths are fixed and are not configurable in config.yaml:
 
-  qemu:
-    binary: ${runtime_install_dir}/qemu/bin/qemu-system-x86_64
+  \$HOME/.executor/bin/qemu-system-x86_64
+  \$HOME/.executor/bin/qemu-img
 
-Do not put disk images, SSH keys, or config.yaml in ${runtime_install_dir};
-those files belong in /home/coder/.executor.
+Do not put QEMU, disk images, SSH keys, or config.yaml in
+${runtime_install_dir}; those files belong in \$HOME/.executor.
 EOF
 }
 
@@ -481,7 +471,7 @@ main() {
   write_zip
 
   log "Standalone runtime zip ready: ${zip_path}"
-  log "Runtime assets ready for /home/coder/.executor: ${assets_dir}"
+  log "Runtime assets ready for the user's \$HOME/.executor: ${assets_dir}"
 }
 
 main "$@"

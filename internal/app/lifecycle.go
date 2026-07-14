@@ -102,10 +102,12 @@ func (a App) ensureVMAssets() error {
 // assetPaths returns the configured local paths for required VM assets.
 func (a App) assetPaths() vm.AssetPaths {
 	return vm.AssetPaths{
-		Image:  a.Config.VMImage,
-		Kernel: a.Config.KernelImage,
-		Initrd: a.Config.InitrdImage,
-		SSHKey: a.Config.SSHKeyPath,
+		Image:   a.Config.VMImage,
+		Kernel:  a.Config.KernelImage,
+		Initrd:  a.Config.InitrdImage,
+		SSHKey:  a.Config.SSHKeyPath,
+		QEMU:    a.Config.QEMUBinary,
+		QEMUImg: a.Config.QEMUImgBinary,
 	}
 }
 

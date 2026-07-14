@@ -17,8 +17,11 @@ import (
 func TestEnsureAssetsAcceptsPresentFiles(t *testing.T) {
 	dir := t.TempDir()
 	paths := testAssetPaths(dir)
-	for _, path := range []string{paths.Image, paths.Kernel, paths.Initrd, paths.SSHKey, paths.publicKey()} {
-		if err := os.WriteFile(path, []byte("asset"), 0o600); err != nil {
+	for _, path := range []string{paths.Image, paths.Kernel, paths.Initrd, paths.SSHKey, paths.publicKey(), paths.QEMU, paths.QEMUImg} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("asset"), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -34,6 +37,25 @@ func TestEnsureAssetsReportsMissingFiles(t *testing.T) {
 	err := EnsureAssets(testAssetPaths(dir))
 	if err == nil || !strings.Contains(err.Error(), "generate and mount them before boot") {
 		t.Fatalf("EnsureAssets() error = %v, want asset guidance", err)
+	}
+}
+
+// TestEnsureAssetsRejectsNonExecutableQEMU verifies downloaded tools are runnable.
+func TestEnsureAssetsRejectsNonExecutableQEMU(t *testing.T) {
+	dir := t.TempDir()
+	paths := testAssetPaths(dir)
+	for _, path := range []string{paths.Image, paths.Kernel, paths.Initrd, paths.SSHKey, paths.publicKey(), paths.QEMU, paths.QEMUImg} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("asset"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err := EnsureAssets(paths)
+	if err == nil || !strings.Contains(err.Error(), "bin/qemu-system-x86_64, bin/qemu-img") {
+		t.Fatalf("EnsureAssets() error = %v, want non-executable QEMU assets reported", err)
 	}
 }
 
@@ -94,9 +116,8 @@ func TestDownloadAssetsAcceptsRootMarkerAndDirectories(t *testing.T) {
 	archive := testArchive(t,
 		tarEntry{name: "./", mode: 0o755, typeflag: tar.TypeDir},
 		tarEntry{name: "./" + imageAsset, content: "image", mode: 0o644},
-		tarEntry{name: "./qemu/", mode: 0o755, typeflag: tar.TypeDir},
-		tarEntry{name: "./qemu/bin/", mode: 0o755, typeflag: tar.TypeDir},
-		tarEntry{name: "./qemu/bin/qemu-system-x86_64", content: "qemu", mode: 0o755},
+		tarEntry{name: "./bin/", mode: 0o755, typeflag: tar.TypeDir},
+		tarEntry{name: "./bin/qemu-system-x86_64", content: "qemu", mode: 0o755},
 	)
 	server := archiveServer(archive)
 	defer server.Close()
@@ -105,7 +126,7 @@ func TestDownloadAssetsAcceptsRootMarkerAndDirectories(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertFileContent(t, filepath.Join(executorDir, imageAsset), "image")
-	qemu := filepath.Join(executorDir, "qemu", "bin", "qemu-system-x86_64")
+	qemu := filepath.Join(executorDir, "bin", "qemu-system-x86_64")
 	assertFileContent(t, qemu, "qemu")
 	info, err := os.Stat(qemu)
 	if err != nil {
@@ -120,12 +141,12 @@ func TestDownloadAssetsAcceptsRootMarkerAndDirectories(t *testing.T) {
 func TestDownloadAssetsRejectsExistingSymlinkDirectory(t *testing.T) {
 	executorDir := t.TempDir()
 	outsideDir := t.TempDir()
-	if err := os.Symlink(outsideDir, filepath.Join(executorDir, "qemu")); err != nil {
+	if err := os.Symlink(outsideDir, filepath.Join(executorDir, "bin")); err != nil {
 		t.Fatal(err)
 	}
 	archive := testArchive(t,
-		tarEntry{name: "qemu/bin/", mode: 0o755, typeflag: tar.TypeDir},
-		tarEntry{name: "qemu/bin/qemu-system-x86_64", content: "qemu", mode: 0o755},
+		tarEntry{name: "bin/", mode: 0o755, typeflag: tar.TypeDir},
+		tarEntry{name: "bin/qemu-system-x86_64", content: "qemu", mode: 0o755},
 	)
 	server := archiveServer(archive)
 	defer server.Close()
@@ -134,7 +155,7 @@ func TestDownloadAssetsRejectsExistingSymlinkDirectory(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "existing non-directory") {
 		t.Fatalf("DownloadAssets() error = %v, want symlink conflict", err)
 	}
-	if _, err := os.Stat(filepath.Join(outsideDir, "bin", "qemu-system-x86_64")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(outsideDir, "qemu-system-x86_64")); !os.IsNotExist(err) {
 		t.Fatalf("outside file stat error = %v, want no file", err)
 	}
 }
@@ -328,10 +349,12 @@ func archiveServer(archive []byte) *httptest.Server {
 
 func testAssetPaths(dir string) AssetPaths {
 	return AssetPaths{
-		Image:  filepath.Join(dir, imageAsset),
-		Kernel: filepath.Join(dir, kernelAsset),
-		Initrd: filepath.Join(dir, initrdAsset),
-		SSHKey: filepath.Join(dir, sshKeyAsset),
+		Image:   filepath.Join(dir, imageAsset),
+		Kernel:  filepath.Join(dir, kernelAsset),
+		Initrd:  filepath.Join(dir, initrdAsset),
+		SSHKey:  filepath.Join(dir, sshKeyAsset),
+		QEMU:    filepath.Join(dir, "bin", "qemu-system-x86_64"),
+		QEMUImg: filepath.Join(dir, "bin", "qemu-img"),
 	}
 }
 

@@ -74,7 +74,7 @@ func (a App) proxy(ctx context.Context, ssh vm.SSHClient, args []string) error {
 // remoteWorkDir returns the VM working directory for proxied container commands.
 func (a App) remoteWorkDir() string {
 	if a.Config.HostShare == "none" {
-		return "/home/coder"
+		return vm.GuestHomeDir
 	}
 	return vm.GuestWorkDir
 }

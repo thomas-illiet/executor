@@ -65,7 +65,6 @@ func TestEnsureVMResourcesCreatesCanonicalConfig(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"qemu:",
-		"  binary: qemu-system-x86_64",
 		"  memory_mib: 8192",
 		"  cpus: 6",
 		"host_share: 9p",
@@ -75,6 +74,11 @@ func TestEnsureVMResourcesCreatesCanonicalConfig(t *testing.T) {
 	} {
 		if !strings.Contains(string(content), fragment) {
 			t.Fatalf("created config %q does not contain %q", content, fragment)
+		}
+	}
+	for _, removed := range []string{"binary:", "data_root:", "disk_image:"} {
+		if strings.Contains(string(content), removed) {
+			t.Fatalf("created config %q contains immutable path key %q", content, removed)
 		}
 	}
 

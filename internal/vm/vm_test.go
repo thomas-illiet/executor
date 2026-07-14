@@ -158,6 +158,7 @@ func TestEnsurePodmanDiskCreatesMissingImage(t *testing.T) {
 		Config: config.Config{
 			PodmanDiskImage: image,
 			PodmanDiskSize:  "10G",
+			QEMUImgBinary:   filepath.Join(dir, "bin", "qemu-img"),
 		},
 		Runner: runner,
 	}
@@ -166,7 +167,7 @@ func TestEnsurePodmanDiskCreatesMissingImage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := commandKey("qemu-img", "create", "-q", "-f", "qcow2", "-o", "preallocation=off", image, "10G")
+	want := commandKey(filepath.Join(dir, "bin", "qemu-img"), "create", "-q", "-f", "qcow2", "-o", "preallocation=off", image, "10G")
 	if len(runner.runs) != 1 || runner.runs[0] != want {
 		t.Fatalf("runs = %#v, want %q", runner.runs, want)
 	}

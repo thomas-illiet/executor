@@ -23,10 +23,12 @@ func TestInitRestartsRunningVMWithChangedFlavor(t *testing.T) {
 	}
 	cfg.PodmanDiskImage = filepath.Join(cfg.ExecutorDir, "data.qcow2")
 	if err := writeTestAssets(vm.AssetPaths{
-		Image:  cfg.VMImage,
-		Kernel: cfg.KernelImage,
-		Initrd: cfg.InitrdImage,
-		SSHKey: cfg.SSHKeyPath,
+		Image:   cfg.VMImage,
+		Kernel:  cfg.KernelImage,
+		Initrd:  cfg.InitrdImage,
+		SSHKey:  cfg.SSHKeyPath,
+		QEMU:    cfg.QEMUBinary,
+		QEMUImg: cfg.QEMUImgBinary,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -87,10 +89,12 @@ func TestInitKeepsRunningVMForIdenticalFlavor(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := writeTestAssets(vm.AssetPaths{
-		Image:  cfg.VMImage,
-		Kernel: cfg.KernelImage,
-		Initrd: cfg.InitrdImage,
-		SSHKey: cfg.SSHKeyPath,
+		Image:   cfg.VMImage,
+		Kernel:  cfg.KernelImage,
+		Initrd:  cfg.InitrdImage,
+		SSHKey:  cfg.SSHKeyPath,
+		QEMU:    cfg.QEMUBinary,
+		QEMUImg: cfg.QEMUImgBinary,
 	}); err != nil {
 		t.Fatal(err)
 	}

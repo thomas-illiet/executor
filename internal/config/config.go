@@ -13,8 +13,8 @@ import (
 const (
 	defaultMemoryMiB            = 4096
 	defaultCPUs                 = 4
-	defaultPodmanDataRoot       = "/home/coder/.local/share/containers"
-	defaultPodmanDiskImage      = "/home/coder/.executor/data.qcow2"
+	defaultGuestPodmanDataRoot  = "/home/coder/.local/share/containers"
+	defaultPodmanDiskFileName   = "data.qcow2"
 	defaultPodmanDiskSize       = "10G"
 	defaultPodmanStorageDriver  = "overlay"
 	defaultPodmanRegistryMirror = ""
@@ -38,6 +38,7 @@ type Config struct {
 	KernelImage          string
 	InitrdImage          string
 	QEMUBinary           string
+	QEMUImgBinary        string
 	QEMUPIDFile          string
 	QEMUAccel            string
 	QEMUIOProfile        string
@@ -68,7 +69,6 @@ type fileConfig struct {
 }
 
 type qemuConfig struct {
-	Binary    string `yaml:"binary" mapstructure:"binary"`
 	Accel     string `yaml:"accel" mapstructure:"accel"`
 	IOProfile string `yaml:"io_profile" mapstructure:"io_profile"`
 	DiskCache string `yaml:"disk_cache,omitempty" mapstructure:"disk_cache"`
@@ -79,8 +79,6 @@ type qemuConfig struct {
 
 type podmanConfig struct {
 	RegistryMirror string `yaml:"registry_mirror" mapstructure:"registry_mirror"`
-	DataRoot       string `yaml:"data_root" mapstructure:"data_root"`
-	DiskImage      string `yaml:"disk_image" mapstructure:"disk_image"`
 	DiskSize       string `yaml:"disk_size" mapstructure:"disk_size"`
 	StorageDriver  string `yaml:"storage_driver" mapstructure:"storage_driver"`
 }
@@ -151,8 +149,8 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 	cfg := Config{
 		Home:                 home,
 		ExecutorDir:          executorDir,
-		PodmanDataDir:        strings.TrimSpace(reader.GetString("podman.data_root")),
-		PodmanDiskImage:      resolveConfigPath(executorDir, strings.TrimSpace(reader.GetString("podman.disk_image"))),
+		PodmanDataDir:        defaultGuestPodmanDataRoot,
+		PodmanDiskImage:      filepath.Join(executorDir, defaultPodmanDiskFileName),
 		PodmanDiskSize:       strings.TrimSpace(reader.GetString("podman.disk_size")),
 		PodmanStorageDriver:  strings.ToLower(strings.TrimSpace(reader.GetString("podman.storage_driver"))),
 		PodmanRegistryMirror: strings.TrimSpace(reader.GetString("podman.registry_mirror")),
@@ -161,7 +159,8 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 		VMImage:              filepath.Join(executorDir, "system.qcow2"),
 		KernelImage:          filepath.Join(executorDir, "vmlinuz-virt"),
 		InitrdImage:          filepath.Join(executorDir, "initramfs-virt"),
-		QEMUBinary:           resolveConfigPath(executorDir, reader.GetString("qemu.binary")),
+		QEMUBinary:           filepath.Join(executorDir, "bin", "qemu-system-x86_64"),
+		QEMUImgBinary:        filepath.Join(executorDir, "bin", "qemu-img"),
 		QEMUPIDFile:          filepath.Join(runtimeDir, "qemu.pid"),
 		QEMUAccel:            strings.ToLower(strings.TrimSpace(reader.GetString("qemu.accel"))),
 		QEMUIOProfile:        ioProfile,
@@ -191,7 +190,6 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 func defaultFileConfig() fileConfig {
 	return fileConfig{
 		QEMU: qemuConfig{
-			Binary:    "qemu-system-x86_64",
 			Accel:     "auto",
 			IOProfile: "max",
 			MemoryMiB: defaultMemoryMiB,
@@ -201,8 +199,6 @@ func defaultFileConfig() fileConfig {
 		GuestArch: "amd64",
 		Podman: podmanConfig{
 			RegistryMirror: defaultPodmanRegistryMirror,
-			DataRoot:       defaultPodmanDataRoot,
-			DiskImage:      defaultPodmanDiskImage,
 			DiskSize:       defaultPodmanDiskSize,
 			StorageDriver:  defaultPodmanStorageDriver,
 		},
@@ -219,7 +215,6 @@ func defaultFileConfig() fileConfig {
 
 // setDefaults registers file configuration defaults with Viper.
 func setDefaults(reader *viper.Viper, cfg fileConfig) {
-	reader.SetDefault("qemu.binary", cfg.QEMU.Binary)
 	reader.SetDefault("qemu.accel", cfg.QEMU.Accel)
 	reader.SetDefault("qemu.io_profile", cfg.QEMU.IOProfile)
 	reader.SetDefault("qemu.memory_mib", cfg.QEMU.MemoryMiB)
@@ -227,8 +222,6 @@ func setDefaults(reader *viper.Viper, cfg fileConfig) {
 	reader.SetDefault("host_share", cfg.HostShare)
 	reader.SetDefault("guest_arch", cfg.GuestArch)
 	reader.SetDefault("podman.registry_mirror", cfg.Podman.RegistryMirror)
-	reader.SetDefault("podman.data_root", cfg.Podman.DataRoot)
-	reader.SetDefault("podman.disk_image", cfg.Podman.DiskImage)
 	reader.SetDefault("podman.disk_size", cfg.Podman.DiskSize)
 	reader.SetDefault("podman.storage_driver", cfg.Podman.StorageDriver)
 	reader.SetDefault("storage.url", cfg.Storage.URL)
@@ -264,14 +257,6 @@ func parseDuration(key, value string) (time.Duration, error) {
 		return 0, fmt.Errorf("%s must be a duration: %w", key, err)
 	}
 	return parsed, nil
-}
-
-// resolveConfigPath resolves relative path-like config values under baseDir.
-func resolveConfigPath(baseDir, value string) string {
-	if value == "" || filepath.IsAbs(value) || !strings.ContainsAny(value, `/\`) {
-		return value
-	}
-	return filepath.Join(baseDir, value)
 }
 
 // validate checks that required configuration values are present and supported.

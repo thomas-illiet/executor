@@ -113,7 +113,7 @@ func (m Manager) ensurePodmanDisk(ctx context.Context) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	return m.Runner.Run(ctx, "qemu-img", "create", "-q", "-f", "qcow2", "-o", "preallocation=off", m.Config.PodmanDiskImage, m.Config.PodmanDiskSize)
+	return m.Runner.Run(ctx, m.Config.QEMUImgBinary, "create", "-q", "-f", "qcow2", "-o", "preallocation=off", m.Config.PodmanDiskImage, m.Config.PodmanDiskSize)
 }
 
 // powerdown asks QEMU to exit through the monitor and waits for the PID to stop.
