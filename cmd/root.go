@@ -46,7 +46,7 @@ func New(application app.App) *cobra.Command {
 		newBootCommand(c),
 		newShutdownCommand(c),
 		newResetCommand(c),
-		newTermCommand(c),
+		newInternalCommand(c),
 		newAddCertsCommand(c),
 		newStatusCommand(c),
 		newUsageCommand(c),

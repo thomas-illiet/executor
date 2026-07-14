@@ -54,8 +54,13 @@ func TestTopLevelHelpIsPodmanLikeAndLocal(t *testing.T) {
 					t.Fatalf("help output %q does not contain %q", got, fragment)
 				}
 			}
-			if strings.Contains(got, "  term                 Open an SSH shell in the VM") {
-				t.Fatalf("help output %q contains hidden term command", got)
+			for _, hidden := range []string{
+				"  internal",
+				"  term                 Open an SSH shell in the VM",
+			} {
+				if strings.Contains(got, hidden) {
+					t.Fatalf("help output %q contains hidden command %q", got, hidden)
+				}
 			}
 			if strings.Contains(got, "  download") {
 				t.Fatalf("help output %q contains removed download command", got)
@@ -105,6 +110,7 @@ func TestForwardedCommandsRequireInit(t *testing.T) {
 		{name: "run subcommand help", args: []string{"run", "--help"}},
 		{name: "help podman subcommand", args: []string{"help", "run"}},
 		{name: "help removed serve command", args: []string{"help", "serve"}},
+		{name: "removed root term command", args: []string{"term"}},
 	}
 
 	for _, tt := range tests {
@@ -127,22 +133,73 @@ func TestForwardedCommandsRequireInit(t *testing.T) {
 	}
 }
 
-// TestInternalHelpIsCobraLocal verifies internal command help is served locally.
-func TestInternalHelpIsCobraLocal(t *testing.T) {
+// TestInternalTermOpensOneSSHShell verifies the VM shell only exists under internal.
+func TestInternalTermOpensOneSSHShell(t *testing.T) {
 	runner := &scriptedRunner{outputs: map[string]scriptedOutput{}}
-	var out strings.Builder
-	application := newTestApp(runner, &out, io.Discard)
+	application := newTestApp(runner, io.Discard, io.Discard)
 
-	if err := ExecuteContext(context.Background(), application, []string{"help", "usage"}); err != nil {
+	if err := ExecuteContext(context.Background(), application, []string{"internal", "term"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{"Show QEMU CPU and memory usage", "Usage:"} {
-		if !strings.Contains(out.String(), fragment) {
-			t.Fatalf("usage help %q does not contain %q", out.String(), fragment)
-		}
+	if len(runner.outputCalls) != 0 {
+		t.Fatalf("internal term output calls = %#v, want none", runner.outputCalls)
 	}
-	if len(runner.runs) != 0 || len(runner.outputCalls) != 0 {
-		t.Fatalf("internal help ran commands: runs=%#v outputCalls=%#v", runner.runs, runner.outputCalls)
+	if len(runner.runs) != 1 {
+		t.Fatalf("internal term runs = %#v, want one SSH shell", runner.runs)
+	}
+	run := runner.runs[0]
+	if run.name != "ssh" || len(run.args) == 0 || run.args[len(run.args)-1] != "coder@localhost" {
+		t.Fatalf("internal term run = %#v, want an SSH shell for coder@localhost", run)
+	}
+}
+
+// TestInternalHelpIsCobraLocal verifies internal command help is served locally.
+func TestInternalHelpIsCobraLocal(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		fragments []string
+	}{
+		{
+			name:      "top-level internal command",
+			args:      []string{"help", "usage"},
+			fragments: []string{"Show QEMU CPU and memory usage", "Usage:"},
+		},
+		{
+			name:      "internal namespace flag",
+			args:      []string{"internal", "--help"},
+			fragments: []string{"Internal executor commands", "term"},
+		},
+		{
+			name:      "internal term flag",
+			args:      []string{"internal", "term", "--help"},
+			fragments: []string{"Open an SSH shell in the VM", "podman internal term"},
+		},
+		{
+			name:      "nested help command",
+			args:      []string{"help", "internal", "term"},
+			fragments: []string{"Open an SSH shell in the VM", "podman internal term"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &scriptedRunner{outputs: map[string]scriptedOutput{}}
+			var out strings.Builder
+			application := newTestApp(runner, &out, io.Discard)
+
+			if err := ExecuteContext(context.Background(), application, tt.args); err != nil {
+				t.Fatal(err)
+			}
+			for _, fragment := range tt.fragments {
+				if !strings.Contains(out.String(), fragment) {
+					t.Fatalf("help %q does not contain %q", out.String(), fragment)
+				}
+			}
+			if len(runner.runs) != 0 || len(runner.outputCalls) != 0 {
+				t.Fatalf("internal help ran commands: runs=%#v outputCalls=%#v", runner.runs, runner.outputCalls)
+			}
+		})
 	}
 }
 

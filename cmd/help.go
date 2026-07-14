@@ -7,7 +7,7 @@ var internalHelpTargets = map[string]struct{}{
 	"boot":      {},
 	"shutdown":  {},
 	"reset":     {},
-	"term":      {},
+	"internal":  {},
 	"add-certs": {},
 	"status":    {},
 	"usage":     {},
@@ -26,7 +26,7 @@ func newHelpCommand(c *cli) *cobra.Command {
 				return nil
 			}
 			if _, ok := internalHelpTargets[args[0]]; ok {
-				target, _, err := command.Root().Find(args[:1])
+				target, _, err := command.Root().Find(args)
 				if err != nil {
 					return err
 				}

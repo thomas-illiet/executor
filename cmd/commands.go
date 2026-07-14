@@ -57,13 +57,24 @@ func newResetCommand(c *cli) *cobra.Command {
 	return command
 }
 
-// newTermCommand builds the hidden command that opens a VM shell.
-func newTermCommand(c *cli) *cobra.Command {
-	return &cobra.Command{
-		Use:    "term",
-		Short:  "Open an SSH shell in the VM",
+// newInternalCommand builds the hidden namespace for executor-only commands.
+func newInternalCommand(c *cli) *cobra.Command {
+	command := &cobra.Command{
+		Use:    "internal",
+		Short:  "Internal executor commands",
 		Hidden: true,
 		Args:   cobra.NoArgs,
+	}
+	command.AddCommand(newTermCommand(c))
+	return command
+}
+
+// newTermCommand builds the internal command that opens a VM shell.
+func newTermCommand(c *cli) *cobra.Command {
+	return &cobra.Command{
+		Use:   "term",
+		Short: "Open an SSH shell in the VM",
+		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return c.application.Term(command.Context())
 		},
