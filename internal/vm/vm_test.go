@@ -53,6 +53,17 @@ func TestQEMUArgsUseQCOW2DiskAnd9PByDefault(t *testing.T) {
 	if monitor != "unix:/tmp/executormonitor.sock,server,nowait" {
 		t.Fatalf("-monitor = %q, want unix monitor socket", monitor)
 	}
+	chardev, ok := argValue(args, "-chardev")
+	if !ok {
+		t.Fatal("missing -chardev")
+	}
+	if chardev != "stdio,id=vmconsole,logfile=/tmp/console.log,logappend=off" {
+		t.Fatalf("-chardev = %q, want foreground console logging", chardev)
+	}
+	serial, ok := argValue(args, "-serial")
+	if !ok || serial != "chardev:vmconsole" {
+		t.Fatalf("-serial = %q, %v, want VM console chardev", serial, ok)
+	}
 	pidfile, ok := argValue(args, "-pidfile")
 	if !ok {
 		t.Fatal("missing -pidfile")
@@ -103,8 +114,34 @@ func testConfig() config.Config {
 		HostShare:       "9p",
 		SSHSocket:       "/tmp/executorssh.sock",
 		MonitorSocket:   "/tmp/executormonitor.sock",
+		ConsoleLog:      "/tmp/console.log",
 		MemoryMiB:       4096,
 		CPUs:            4,
+	}
+}
+
+// TestQEMUArgsUseOutputOnlyConsoleWhenDaemonized verifies init cannot inject input.
+func TestQEMUArgsUseOutputOnlyConsoleWhenDaemonized(t *testing.T) {
+	manager := Manager{Config: testConfig()}
+
+	args := manager.qemuArgs(true)
+
+	chardev, ok := argValue(args, "-chardev")
+	if !ok {
+		t.Fatal("missing -chardev")
+	}
+	want := "file,id=vmconsole,path=/tmp/console.log"
+	if chardev != want {
+		t.Fatalf("-chardev = %q, want %q", chardev, want)
+	}
+	if strings.Contains(chardev, "input-path") {
+		t.Fatalf("-chardev = %q, must not expose console input", chardev)
+	}
+	if !argValueContains(args, "-serial", "chardev:vmconsole") {
+		t.Fatalf("args %#v do not connect ttyS0 to the console log", args)
+	}
+	if !containsArg(args, "-daemonize") {
+		t.Fatalf("args %#v do not daemonize QEMU", args)
 	}
 }
 
@@ -168,7 +205,11 @@ func TestStartKeepsSocketsWhenConfiguredQEMUAlreadyRuns(t *testing.T) {
 	pidfile := filepath.Join(dir, "qemu.pid")
 	sshSocket := filepath.Join(dir, "ssh.sock")
 	monitorSocket := filepath.Join(dir, "monitor.sock")
+	consoleLog := filepath.Join(dir, "console.log")
 	if err := os.WriteFile(pidfile, []byte("123\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(consoleLog, []byte("current session\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	sshListener, err := net.Listen("unix", sshSocket)
@@ -194,6 +235,7 @@ func TestStartKeepsSocketsWhenConfiguredQEMUAlreadyRuns(t *testing.T) {
 			QEMUPIDFile:   pidfile,
 			SSHSocket:     sshSocket,
 			MonitorSocket: monitorSocket,
+			ConsoleLog:    consoleLog,
 		},
 		Runner: runner,
 	}
@@ -212,6 +254,13 @@ func TestStartKeepsSocketsWhenConfiguredQEMUAlreadyRuns(t *testing.T) {
 		if info.Mode()&os.ModeSocket == 0 {
 			t.Fatalf("%s mode = %v, want socket", path, info.Mode())
 		}
+	}
+	content, err := os.ReadFile(consoleLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(content); got != "current session\n" {
+		t.Fatalf("console log = %q, want existing running session preserved", got)
 	}
 }
 
@@ -400,6 +449,16 @@ func argValue(args []string, flag string) (string, bool) {
 func argValueContains(args []string, flag string, fragment string) bool {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == flag && strings.Contains(args[i+1], fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsArg reports whether an exact argument is present.
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
 			return true
 		}
 	}

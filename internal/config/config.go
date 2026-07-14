@@ -49,6 +49,7 @@ type Config struct {
 	SSHUser              string
 	SSHKeyPath           string
 	MonitorSocket        string
+	ConsoleLog           string
 	MemoryMiB            int
 	CPUs                 int
 	BootFile             string
@@ -172,6 +173,7 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 		SSHUser:              defaultGuestUser,
 		SSHKeyPath:           filepath.Join(executorDir, "id_ed25519"),
 		MonitorSocket:        filepath.Join(runtimeDir, "monitor.sock"),
+		ConsoleLog:           filepath.Join(executorDir, "logs", "console.log"),
 		MemoryMiB:            reader.GetInt("qemu.memory_mib"),
 		CPUs:                 reader.GetInt("qemu.cpus"),
 		BootFile:             filepath.Join(home, ".boot"),

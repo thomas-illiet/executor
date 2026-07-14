@@ -58,6 +58,9 @@ func (m Manager) Start(ctx context.Context, daemonize bool) error {
 	if err := m.probeUnixHostForward(ctx); err != nil {
 		return err
 	}
+	if err := m.prepareConsoleLog(); err != nil {
+		return err
+	}
 	args := m.qemuArgs(daemonize)
 	return m.Runner.Run(ctx, m.Config.QEMUBinary, args...)
 }

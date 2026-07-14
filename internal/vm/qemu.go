@@ -24,6 +24,8 @@ func (m Manager) qemuArgsWithShare(daemonize bool, share string) []string {
 		"-smp", strconv.Itoa(m.Config.CPUs),
 		"-rtc", "base=utc,clock=host,driftfix=none",
 		"-monitor", m.monitorArg(),
+		"-chardev", m.consoleChardevArg(daemonize),
+		"-serial", "chardev:vmconsole",
 		"-device", "virtio-net-pci,netdev=mynet0",
 		"-netdev", netdev,
 		"-display", "none",
@@ -60,6 +62,14 @@ func (m Manager) qemuArgsWithShare(daemonize bool, share string) []string {
 		args = append(args, "-nographic")
 	}
 	return args
+}
+
+// consoleChardevArg configures serial logging while preserving foreground boot input.
+func (m Manager) consoleChardevArg(daemonize bool) string {
+	if daemonize {
+		return fmt.Sprintf("file,id=vmconsole,path=%s", m.Config.ConsoleLog)
+	}
+	return fmt.Sprintf("stdio,id=vmconsole,logfile=%s,logappend=off", m.Config.ConsoleLog)
 }
 
 // hostSharePath resolves the host path exposed through the configured share mode.

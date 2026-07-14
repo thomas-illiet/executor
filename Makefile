@@ -193,7 +193,18 @@ vm-secure-smoke: docker-build vm-asset-ready ## Exercise the restricted containe
 	docker exec $(CONTAINER_NAME)-smoke executor pull alpine:3.20
 	docker exec $(CONTAINER_NAME)-smoke executor run --rm alpine:3.20 echo secure-ok
 	docker exec $(CONTAINER_NAME)-smoke executor compose --help
-	docker exec $(CONTAINER_NAME)-smoke executor shutdown
+	docker exec $(CONTAINER_NAME)-smoke sh -lc 'set -eu; \
+		executor internal console >/tmp/console-reader-1.log 2>/tmp/console-reader-1.err & reader1=$$!; \
+		executor internal console >/tmp/console-reader-2.log 2>/tmp/console-reader-2.err & reader2=$$!; \
+		kill -0 "$$reader1"; kill -0 "$$reader2"; \
+		i=0; while [ ! -s /tmp/console-reader-1.log ] || [ ! -s /tmp/console-reader-2.log ]; do i=$$((i + 1)); test "$$i" -lt 50; sleep 0.1; done; \
+		test "$$(stat -c %a "$$HOME/.executor/logs")" = 700; \
+		test "$$(stat -c %a "$$HOME/.executor/logs/console.log")" = 600; \
+		executor shutdown; \
+		wait "$$reader1"; wait "$$reader2"; \
+		cmp /tmp/console-reader-1.log /tmp/console-reader-2.log; \
+		if executor internal console >/dev/null 2>/tmp/console-stopped.err; then echo "console unexpectedly accepted a stopped VM" >&2; exit 1; fi; \
+		grep -q "VM is not running" /tmp/console-stopped.err'
 	docker rm -f $(CONTAINER_NAME)-smoke >/dev/null
 	rm -rf "$(VM_SMOKE_ASSETS_DIR)"
 

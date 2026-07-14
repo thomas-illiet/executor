@@ -62,6 +62,9 @@ func TestLoadUsesDefaultsWithoutConfig(t *testing.T) {
 	if cfg.MonitorSocket != filepath.Join(runtimeDir, "monitor.sock") {
 		t.Fatalf("MonitorSocket = %q, want derived socket path", cfg.MonitorSocket)
 	}
+	if cfg.ConsoleLog != filepath.Join(executorDir, "logs", "console.log") {
+		t.Fatalf("ConsoleLog = %q, want derived console log path", cfg.ConsoleLog)
+	}
 	if _, err := os.Stat(filepath.Join(executorDir, configFileName)); !os.IsNotExist(err) {
 		t.Fatalf("config file stat error = %v, want not exist", err)
 	}

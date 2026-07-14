@@ -153,6 +153,25 @@ func TestInternalTermOpensOneSSHShell(t *testing.T) {
 	}
 }
 
+// TestInternalConsoleRefusesStoppedVM verifies console is local and requires QEMU.
+func TestInternalConsoleRefusesStoppedVM(t *testing.T) {
+	runner := &scriptedRunner{outputs: map[string]scriptedOutput{}}
+	application := newTestApp(runner, io.Discard, io.Discard)
+	input := &countingReader{}
+	application.In = input
+
+	err := ExecuteContext(context.Background(), application, []string{"internal", "console"})
+	if err == nil || !strings.Contains(err.Error(), "VM is not running") {
+		t.Fatalf("internal console error = %v, want stopped VM error", err)
+	}
+	if input.reads != 0 {
+		t.Fatalf("internal console read stdin %d times, want 0", input.reads)
+	}
+	if len(runner.runs) != 0 || len(runner.outputCalls) != 0 {
+		t.Fatalf("internal console ran unexpected commands: runs=%#v outputCalls=%#v", runner.runs, runner.outputCalls)
+	}
+}
+
 // TestInternalHelpIsCobraLocal verifies internal command help is served locally.
 func TestInternalHelpIsCobraLocal(t *testing.T) {
 	tests := []struct {
@@ -168,7 +187,12 @@ func TestInternalHelpIsCobraLocal(t *testing.T) {
 		{
 			name:      "internal namespace flag",
 			args:      []string{"internal", "--help"},
-			fragments: []string{"Internal executor commands", "term"},
+			fragments: []string{"Internal executor commands", "console", "term"},
+		},
+		{
+			name:      "internal console flag",
+			args:      []string{"internal", "console", "--help"},
+			fragments: []string{"Display the read-only VM console", "podman internal console"},
 		},
 		{
 			name:      "internal term flag",
@@ -266,6 +290,16 @@ type scriptedRunner struct {
 	runs        []recordedRun
 	outputCalls []recordedRun
 	outputs     map[string]scriptedOutput
+}
+
+type countingReader struct {
+	reads int
+}
+
+// Read records any unexpected attempt to consume CLI input.
+func (r *countingReader) Read(_ []byte) (int, error) {
+	r.reads++
+	return 0, io.EOF
 }
 
 // Run records a local command invocation for assertions.

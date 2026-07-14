@@ -65,7 +65,10 @@ func newInternalCommand(c *cli) *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 	}
-	command.AddCommand(newTermCommand(c))
+	command.AddCommand(
+		newTermCommand(c),
+		newConsoleCommand(c),
+	)
 	return command
 }
 
@@ -77,6 +80,18 @@ func newTermCommand(c *cli) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return c.application.Term(command.Context())
+		},
+	}
+}
+
+// newConsoleCommand builds the internal read-only VM console command.
+func newConsoleCommand(c *cli) *cobra.Command {
+	return &cobra.Command{
+		Use:   "console",
+		Short: "Display the read-only VM console",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return c.application.Console(command.Context())
 		},
 	}
 }

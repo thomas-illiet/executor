@@ -77,6 +77,11 @@ func (a App) Term(ctx context.Context) error {
 	return a.manager().SSH.Shell(ctx)
 }
 
+// Console displays the VM serial console without accepting input.
+func (a App) Console(ctx context.Context) error {
+	return a.manager().Console(ctx, a.Out)
+}
+
 // AddCerts copies local certificates into the VM and refreshes trust.
 func (a App) AddCerts(ctx context.Context, certPath string) error {
 	return a.addCerts(ctx, a.manager().SSH, certPath)
