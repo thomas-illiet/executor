@@ -27,6 +27,11 @@ type App struct {
 
 type ShutdownOptions struct{}
 
+type InitOptions struct {
+	CPUs      *int
+	MemoryMiB *int
+}
+
 type ResetOptions struct {
 	Force bool
 }
@@ -41,8 +46,24 @@ func (a App) PrintHelp() {
 	a.printHelp()
 }
 
-// Init prepares the VM assets, starts QEMU, and configures rootless Podman.
-func (a App) Init(ctx context.Context) error {
+// Init persists optional VM resources, then starts and configures the VM.
+func (a App) Init(ctx context.Context, options InitOptions) error {
+	oldManager := a.manager()
+	updated, flavorChanged, err := config.EnsureVMResources(a.Config, config.VMResourceOverrides{
+		CPUs:      options.CPUs,
+		MemoryMiB: options.MemoryMiB,
+	})
+	if err != nil {
+		return err
+	}
+	if flavorChanged {
+		if _, running := a.qemuProcess(ctx, oldManager); running {
+			if err := a.shutdown(ctx, oldManager, ShutdownOptions{}); err != nil {
+				return err
+			}
+		}
+	}
+	a.Config = updated
 	creds, err := vm.LoadCredentials(a.Config.BootFile)
 	if err != nil {
 		return err

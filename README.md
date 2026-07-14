@@ -42,6 +42,19 @@ make docker-shell
 Inside that shell, Compose mounts the Alpine VM assets at
 `/home/coder/.executor/`, so `executor init` can boot the local VM directly.
 
+Choose the VM flavor during initialization with independent CPU and memory
+options:
+
+```sh
+podman init --cpu 4 --memory 8G
+```
+
+Memory accepts a positive integer followed by `M`, `MiB`, `G`, or `GiB`
+(case-insensitive). The command creates `~/.executor/config.yaml` when it is
+missing and updates only `qemu.cpus` and `qemu.memory_mib` when resource
+options are supplied. Changing the flavor of a running VM restarts it so the new
+values take effect immediately.
+
 Generate the Alpine VM assets:
 
 ```sh

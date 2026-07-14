@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -185,6 +187,11 @@ func TestInternalHelpIsCobraLocal(t *testing.T) {
 			fragments: []string{"Show QEMU CPU and memory usage", "Usage:"},
 		},
 		{
+			name:      "init flavor options",
+			args:      []string{"help", "init"},
+			fragments: []string{"--cpu", "--memory", "4096M or 4G"},
+		},
+		{
 			name:      "internal namespace flag",
 			args:      []string{"internal", "--help"},
 			fragments: []string{"Internal executor commands", "console", "term"},
@@ -243,6 +250,37 @@ func TestInternalCommandsRejectUnknownFlags(t *testing.T) {
 			}
 			if len(runner.runs) != 0 || len(runner.outputCalls) != 0 {
 				t.Fatalf("strict parsing ran commands: runs=%#v outputCalls=%#v", runner.runs, runner.outputCalls)
+			}
+		})
+	}
+}
+
+// TestInitRejectsInvalidFlavorBeforeWritingConfig verifies CLI validation is side-effect free.
+func TestInitRejectsInvalidFlavorBeforeWritingConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "zero CPU", args: []string{"init", "--cpu", "0"}},
+		{name: "memory without unit", args: []string{"init", "--memory", "4096"}},
+		{name: "decimal memory", args: []string{"init", "--memory", "1.5G"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			executorDir := t.TempDir()
+			runner := &scriptedRunner{outputs: map[string]scriptedOutput{}}
+			application := newTestApp(runner, io.Discard, io.Discard)
+			application.Config.ExecutorDir = executorDir
+
+			if err := ExecuteContext(context.Background(), application, tt.args); err == nil {
+				t.Fatalf("ExecuteContext(%v) error = nil, want validation error", tt.args)
+			}
+			if _, err := os.Stat(filepath.Join(executorDir, "config.yaml")); !os.IsNotExist(err) {
+				t.Fatalf("config stat error = %v, want missing file", err)
+			}
+			if len(runner.runs) != 0 || len(runner.outputCalls) != 0 {
+				t.Fatalf("invalid init ran commands: runs=%#v outputs=%#v", runner.runs, runner.outputCalls)
 			}
 		})
 	}
