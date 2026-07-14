@@ -86,8 +86,8 @@ func (m Manager) hostSharePath(share string) string {
 // kernelAppend builds the guest kernel command line.
 func (m Manager) kernelAppend(share string) string {
 	values := []string{"root=/dev/vda", "rootfstype=ext4", "rw", "console=ttyS0", "modules=virtio_blk,virtio_net,ext4,fuse", "quiet"}
-	if sharePath := m.hostSharePath(share); sharePath != "" {
-		values = append(values, "executor.host_target="+sharePath)
+	if m.hostSharePath(share) != "" {
+		values = append(values, "executor.host_target="+GuestWorkDir)
 	}
 	return strings.Join(values, " ")
 }

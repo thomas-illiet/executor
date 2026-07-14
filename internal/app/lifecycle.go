@@ -77,7 +77,7 @@ func (a App) downloadVMAssets(ctx context.Context, mode vm.AssetInstallMode) err
 
 // addCerts copies local certificates into the VM and refreshes trust.
 func (a App) addCerts(ctx context.Context, ssh vm.SSHClient, certPath string) error {
-	command := "cd " + remotePath(a.Config.WorkDir) + " && cp " + remotePath(certPath) + "/* /etc/ssl/certs && update-ca-certificates"
+	command := "cd " + remotePath(vm.GuestWorkDir) + " && cp " + remotePath(certPath) + "/* /etc/ssl/certs && update-ca-certificates"
 	return ssh.RunNoTTY(ctx, command)
 }
 

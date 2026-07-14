@@ -16,6 +16,10 @@ const (
 	PodmanAuthFile   = "/home/coder/.config/containers/auth.json"
 )
 
+// GuestWorkDir is the fixed mount point for the host working directory.
+// Mounting only this subdirectory preserves the rest of the guest home.
+const GuestWorkDir = "/home/coder/workspace"
+
 const podmanConfigDir = "/home/coder/.config/containers"
 
 // ConfigurePodman writes rootless Podman configuration and verifies Podman in the VM.
