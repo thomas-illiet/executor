@@ -75,12 +75,6 @@ func (a App) downloadVMAssets(ctx context.Context, mode vm.AssetInstallMode) err
 	}, a.Config.ExecutorDir, mode, a.Out)
 }
 
-// addCerts copies local certificates into the VM and refreshes trust.
-func (a App) addCerts(ctx context.Context, ssh vm.SSHClient, certPath string) error {
-	command := "cd " + remotePath(vm.GuestWorkDir) + " && cp " + remotePath(certPath) + "/* /etc/ssl/certs && update-ca-certificates"
-	return ssh.RunNoTTY(ctx, command)
-}
-
 // ensureMemory checks that the container memory limit can host the VM.
 func (a App) ensureMemory() error {
 	maxBytes, ok := readMemoryMax()

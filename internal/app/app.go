@@ -95,11 +95,6 @@ func (a App) Console(ctx context.Context) error {
 	return a.manager().Console(ctx, a.Out)
 }
 
-// AddCerts copies local certificates into the VM and refreshes trust.
-func (a App) AddCerts(ctx context.Context, certPath string) error {
-	return a.addCerts(ctx, a.manager().SSH, certPath)
-}
-
 // Status prints the current QEMU, monitor, SSH, and Podman status.
 func (a App) Status(ctx context.Context) error {
 	return a.status(ctx, a.manager())

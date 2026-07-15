@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	internalcmd "executor/cmd/internal"
 	"executor/internal/app"
 
 	"github.com/spf13/cobra"
@@ -46,8 +47,7 @@ func New(application app.App) *cobra.Command {
 		newBootCommand(c),
 		newShutdownCommand(c),
 		newResetCommand(c),
-		newInternalCommand(c),
-		newAddCertsCommand(c),
+		internalcmd.New(c.application),
 		newStatusCommand(c),
 		newUsageCommand(c),
 		newRunCommand(c),
@@ -73,12 +73,4 @@ func (c *cli) runRoot(command *cobra.Command, args []string) error {
 	default:
 		return c.application.ExecuteContainer(command.Context(), args)
 	}
-}
-
-// containerCommandArgs prefixes proxied arguments with a Podman subcommand name.
-func containerCommandArgs(name string, args []string) []string {
-	values := make([]string, 0, len(args)+1)
-	values = append(values, name)
-	values = append(values, args...)
-	return values
 }

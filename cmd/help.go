@@ -3,14 +3,12 @@ package cmd
 import "github.com/spf13/cobra"
 
 var internalHelpTargets = map[string]struct{}{
-	"init":      {},
-	"boot":      {},
-	"shutdown":  {},
-	"reset":     {},
-	"internal":  {},
-	"add-certs": {},
-	"status":    {},
-	"usage":     {},
+	"init":     {},
+	"boot":     {},
+	"shutdown": {},
+	"reset":    {},
+	"status":   {},
+	"usage":    {},
 }
 
 // newHelpCommand builds help handling for local and proxied commands.

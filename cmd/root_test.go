@@ -111,6 +111,8 @@ func TestForwardedCommandsRequireInit(t *testing.T) {
 		{name: "podman top", args: []string{"top", "container"}},
 		{name: "run subcommand help", args: []string{"run", "--help"}},
 		{name: "help podman subcommand", args: []string{"help", "run"}},
+		{name: "help hidden internal namespace", args: []string{"help", "internal"}},
+		{name: "help hidden internal command", args: []string{"help", "internal", "term"}},
 		{name: "help removed serve command", args: []string{"help", "serve"}},
 		{name: "removed root term command", args: []string{"term"}},
 	}
@@ -186,8 +188,8 @@ func TestInternalConsoleRefusesStoppedVM(t *testing.T) {
 	}
 }
 
-// TestInternalHelpIsCobraLocal verifies internal command help is served locally.
-func TestInternalHelpIsCobraLocal(t *testing.T) {
+// TestLocalCommandHelpIsCobraLocal verifies public executor command help is served locally.
+func TestLocalCommandHelpIsCobraLocal(t *testing.T) {
 	tests := []struct {
 		name      string
 		args      []string
@@ -202,26 +204,6 @@ func TestInternalHelpIsCobraLocal(t *testing.T) {
 			name:      "init flavor options",
 			args:      []string{"help", "init"},
 			fragments: []string{"--cpu", "--memory", "4096M or 4G"},
-		},
-		{
-			name:      "internal namespace flag",
-			args:      []string{"internal", "--help"},
-			fragments: []string{"Internal executor commands", "console", "term"},
-		},
-		{
-			name:      "internal console flag",
-			args:      []string{"internal", "console", "--help"},
-			fragments: []string{"Display the read-only VM console", "podman internal console"},
-		},
-		{
-			name:      "internal term flag",
-			args:      []string{"internal", "term", "--help"},
-			fragments: []string{"Open an SSH shell in the VM", "podman internal term"},
-		},
-		{
-			name:      "nested help command",
-			args:      []string{"help", "internal", "term"},
-			fragments: []string{"Open an SSH shell in the VM", "podman internal term"},
 		},
 	}
 
@@ -238,6 +220,35 @@ func TestInternalHelpIsCobraLocal(t *testing.T) {
 				if !strings.Contains(out.String(), fragment) {
 					t.Fatalf("help %q does not contain %q", out.String(), fragment)
 				}
+			}
+			if len(runner.runs) != 0 || len(runner.outputCalls) != 0 {
+				t.Fatalf("local help ran commands: runs=%#v outputCalls=%#v", runner.runs, runner.outputCalls)
+			}
+		})
+	}
+}
+
+// TestInternalNamespaceDoesNotExposeHelp verifies the hidden namespace cannot be discovered through Cobra help.
+func TestInternalNamespaceDoesNotExposeHelp(t *testing.T) {
+	tests := [][]string{
+		{"internal"},
+		{"internal", "--help"},
+		{"internal", "console", "--help"},
+		{"internal", "term", "--help"},
+	}
+
+	for _, args := range tests {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			runner := &scriptedRunner{outputs: map[string]scriptedOutput{}}
+			var out strings.Builder
+			var errOut strings.Builder
+			application := newTestApp(runner, &out, &errOut)
+
+			if err := ExecuteContext(context.Background(), application, args); err != nil {
+				t.Fatal(err)
+			}
+			if out.Len() != 0 || errOut.Len() != 0 {
+				t.Fatalf("internal help wrote out=%q err=%q, want no output", out.String(), errOut.String())
 			}
 			if len(runner.runs) != 0 || len(runner.outputCalls) != 0 {
 				t.Fatalf("internal help ran commands: runs=%#v outputCalls=%#v", runner.runs, runner.outputCalls)

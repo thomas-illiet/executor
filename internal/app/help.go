@@ -84,7 +84,6 @@ Executor Commands:
   usage                Show QEMU CPU and memory usage
   shutdown             Stop QEMU and %[1]s
   reset [--force]      Remove Podman state before a fresh init
-  add-certs <dir>      Copy CA certificates into the VM
 
 Run '%[1]s COMMAND --help' for more information on a command.
 
