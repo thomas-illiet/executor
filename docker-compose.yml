@@ -9,7 +9,7 @@ services:
     user: coder:coder
     cap_drop:
       - ALL
-    working_dir: /home/coder
+    working_dir: /workspace
     volumes:
       - type: bind
         source: ${WORKSPACE:-.}

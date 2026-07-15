@@ -194,7 +194,7 @@ vm-secure-smoke: docker-build vm-asset-ready ## Exercise the restricted containe
 	docker exec $(CONTAINER_NAME)-smoke sh -lc '! ss -ltn | grep -E ":(2222|12343)[[:space:]]"'
 	docker exec $(CONTAINER_NAME)-smoke executor pull alpine:3.20
 	docker exec $(CONTAINER_NAME)-smoke executor run --rm alpine:3.20 echo secure-ok
-	docker exec $(CONTAINER_NAME)-smoke executor compose --help
+	docker exec $(CONTAINER_NAME)-smoke executor compose config >/dev/null
 	docker exec $(CONTAINER_NAME)-smoke sh -lc 'set -eu; \
 		executor internal console >/tmp/console-reader-1.log 2>/tmp/console-reader-1.err & reader1=$$!; \
 		executor internal console >/tmp/console-reader-2.log 2>/tmp/console-reader-2.err & reader2=$$!; \

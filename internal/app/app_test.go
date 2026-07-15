@@ -532,32 +532,45 @@ func TestProxyUsesCoderHomeWhenHostShareDisabled(t *testing.T) {
 	}
 }
 
-// TestProxyUsesFixedGuestWorkDir verifies host paths mount below the guest home.
-func TestProxyUsesFixedGuestWorkDir(t *testing.T) {
-	runner := &recordingRunner{}
-	app := App{
-		Config: config.Config{
-			HostShare: "9p",
-			WorkDir:   "/host/workspace",
-		},
-	}
-	ssh := vm.SSHClient{
-		SocketPath: "/tmp/executor.sock",
-		User:       "coder",
-		Runner:     runner,
+// TestProxyUsesHostWorkDir verifies all proxied command families preserve the host path.
+func TestProxyUsesHostWorkDir(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "generic", args: []string{"ps"}},
+		{name: "compose", args: []string{"compose", "ps"}},
+		{name: "compose up", args: []string{"compose", "up", "web"}},
+		{name: "run", args: []string{"run", "--rm", "alpine", "true"}},
 	}
 
-	if err := app.proxy(context.Background(), ssh, []string{"ps"}); err != nil {
-		t.Fatal(err)
-	}
-	if len(runner.runs) != 1 {
-		t.Fatalf("proxy runs = %#v, want one SSH command", runner.runs)
-	}
-	args := runner.runs[0].args
-	command := args[len(args)-1]
-	want := "cd '/home/coder/workspace' && 'env' 'XDG_RUNTIME_DIR=/run/user/1000' 'REGISTRY_AUTH_FILE=/home/coder/.config/containers/auth.json' 'TMPDIR=/run/user/1000' 'podman' 'ps'"
-	if command != want {
-		t.Fatalf("proxy command = %q, want %q", command, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &recordingRunner{}
+			app := App{
+				Config: config.Config{
+					HostShare: "9p",
+					WorkDir:   "/workspace/project",
+				},
+			}
+			ssh := vm.SSHClient{
+				SocketPath: "/tmp/executor.sock",
+				User:       "coder",
+				Runner:     runner,
+			}
+
+			if err := app.proxy(context.Background(), ssh, tt.args); err != nil {
+				t.Fatal(err)
+			}
+			if len(runner.runs) != 1 {
+				t.Fatalf("proxy runs = %#v, want one SSH command", runner.runs)
+			}
+			args := runner.runs[0].args
+			command := args[len(args)-1]
+			if !strings.HasPrefix(command, "cd '/workspace/project' && ") {
+				t.Fatalf("proxy command = %q, want host working directory prefix", command)
+			}
+		})
 	}
 }
 

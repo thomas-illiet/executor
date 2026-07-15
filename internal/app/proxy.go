@@ -96,7 +96,7 @@ func (a App) remoteWorkDir() string {
 	if a.Config.HostShare == "none" {
 		return vm.GuestHomeDir
 	}
-	return vm.GuestWorkDir
+	return a.Config.WorkDir
 }
 
 // openForward creates a local SSH forward for a published port.

@@ -41,8 +41,8 @@ func TestQEMUArgsUseQCOW2DiskAnd9PByDefault(t *testing.T) {
 		t.Fatalf("args %#v do not include 9p share", args)
 	}
 	appendArgs := manager.kernelAppend("9p")
-	if !strings.Contains(appendArgs, "executor.host_target="+GuestWorkDir) {
-		t.Fatalf("kernel append = %q, want fixed guest workspace mount", appendArgs)
+	if !strings.Contains(appendArgs, "executor.host_target=/workspace") {
+		t.Fatalf("kernel append = %q, want host working directory as guest mount target", appendArgs)
 	}
 	if argValueContains(args, "-virtfs", "mount_tag=podmandata") {
 		t.Fatalf("args %#v should not include a dedicated Podman data share", args)

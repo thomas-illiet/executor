@@ -70,5 +70,5 @@ ENV HOME=/home/coder
 FROM dev-base AS dev
 
 USER coder:coder
-WORKDIR /home/coder
+WORKDIR /workspace
 CMD ["sleep", "infinity"]
