@@ -27,9 +27,20 @@ func CommandWithPrefix(podmanCommand []string, args []string) []string {
 	return command
 }
 
-// WantsTTY reports whether the container arguments request a TTY.
+// WantsTTY reports whether the container arguments need a TTY.
 func WantsTTY(args []string) bool {
-	if len(args) == 0 || (args[0] != "run" && args[0] != "exec") {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "login":
+		return loginNeedsTTY(args[1:])
+	case "up":
+		return !hasDetachFlag(args[1:]) && !hasHelpFlag(args[1:])
+	case "compose":
+		return HasUp(args) && !hasDetachFlag(args[1:]) && !hasHelpFlag(args[1:])
+	case "run", "exec":
+	default:
 		return false
 	}
 	for _, arg := range args[1:] {
@@ -37,6 +48,32 @@ func WantsTTY(args []string) bool {
 			return true
 		}
 		if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg[1:], "t") {
+			return true
+		}
+	}
+	return false
+}
+
+// loginNeedsTTY reports whether Podman login may prompt for credentials.
+func loginNeedsTTY(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "-h", "--help", "--get-login", "-p", "--password", "--password-stdin", "--secret":
+			return false
+		}
+		if strings.HasPrefix(arg, "--password=") ||
+			strings.HasPrefix(arg, "--secret=") ||
+			(strings.HasPrefix(arg, "-p") && len(arg) > 2) {
+			return false
+		}
+	}
+	return true
+}
+
+// hasHelpFlag reports whether an argument list requests command help.
+func hasHelpFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
 			return true
 		}
 	}

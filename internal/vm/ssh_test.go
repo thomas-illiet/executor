@@ -126,6 +126,43 @@ func TestRunNoTTYUsesUnixSocketProxyCommand(t *testing.T) {
 	}
 }
 
+// TestShellWithEnvironmentExportsPodmanPaths verifies VM shells share proxy state.
+func TestShellWithEnvironmentExportsPodmanPaths(t *testing.T) {
+	runner := &sshRecordingRunner{}
+	client := SSHClient{
+		SocketPath: "/tmp/executor.sock",
+		User:       "coder",
+		KeyPath:    "/tmp/key",
+		Runner:     runner,
+	}
+	environment := []string{
+		"XDG_RUNTIME_DIR=/run/user/1000",
+		"REGISTRY_AUTH_FILE=/home/coder/.config/containers/auth.json",
+		"TMPDIR=/run/user/1000",
+	}
+
+	if err := client.ShellWithEnvironment(context.Background(), environment); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(runner.args, "-t") {
+		t.Fatalf("args = %#v, want SSH TTY", runner.args)
+	}
+	if len(runner.args) < 2 || runner.args[len(runner.args)-2] != "coder@localhost" {
+		t.Fatalf("args = %#v, want coder destination before command", runner.args)
+	}
+	command := runner.args[len(runner.args)-1]
+	for _, fragment := range []string{
+		"'XDG_RUNTIME_DIR=/run/user/1000'",
+		"'REGISTRY_AUTH_FILE=/home/coder/.config/containers/auth.json'",
+		"'TMPDIR=/run/user/1000'",
+		"'/bin/sh' '-l'",
+	} {
+		if !strings.Contains(command, fragment) {
+			t.Fatalf("command = %q, want %q", command, fragment)
+		}
+	}
+}
+
 type sshRecordingRunner struct {
 	name string
 	args []string

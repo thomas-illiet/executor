@@ -28,7 +28,7 @@ func TestConfigurePodmanWritesRootlessConfig(t *testing.T) {
 		},
 	}
 
-	if err := manager.ConfigurePodman(context.Background(), Credentials{UID: "alice", APIKey: "secret"}); err != nil {
+	if err := manager.ConfigurePodman(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -77,9 +77,8 @@ func TestConfigurePodmanWritesRootlessConfig(t *testing.T) {
 		}
 	}
 
-	authWrite := runContaining(runner.runs, PodmanAuthFile)
-	if !strings.Contains(authWrite, `"auth":"YWxpY2U6c2VjcmV0"`) {
-		t.Fatalf("auth write %q does not contain registry auth", authWrite)
+	if authWrite := runContaining(runner.runs, "auth.json.executor.tmp"); authWrite != "" {
+		t.Fatalf("ConfigurePodman unexpectedly managed registry auth: %q", authWrite)
 	}
 
 	waitPodman := runContaining(runner.runs, "podman info")

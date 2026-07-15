@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"executor/internal/container"
 	"executor/internal/system"
@@ -32,26 +34,44 @@ func (a App) compose(ctx context.Context, manager vm.Manager, args []string) err
 	if contains(args, "-h") || contains(args, "--help") {
 		return a.proxy(ctx, manager.SSH, args)
 	}
+	var mappings []container.Mapping
 	if container.HasUp(args) {
 		path, err := container.ResolveFile(args, a.Config.WorkDir)
 		if err != nil {
 			return err
 		}
 		allocate := func() (int, error) { return container.AllocateFree(localForwardCheckHost) }
-		mappings, warnings, err := container.LoadPorts(path, allocate)
+		var warnings []string
+		mappings, warnings, err = container.LoadPorts(path, allocate)
 		for _, warning := range warnings {
 			fmt.Fprintln(a.Err, "warning:", warning)
 		}
 		if err != nil {
 			return err
 		}
-		for _, mapping := range mappings {
+		for index, mapping := range mappings {
 			if err := a.openForward(ctx, manager, mapping); err != nil {
+				_ = a.stopForwards(manager.SSH, mappings[:index+1])
 				return err
 			}
 		}
 	}
-	return a.proxy(ctx, manager.SSH, args)
+	err := a.proxy(ctx, manager.SSH, args)
+	if container.HasUp(args) && !container.Detaches(args) {
+		err = errors.Join(err, a.stopForwards(manager.SSH, mappings))
+	}
+	return err
+}
+
+// stopForwards closes executor-owned forwards without inheriting a canceled command context.
+func (a App) stopForwards(ssh vm.SSHClient, mappings []container.Mapping) error {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var cleanupErr error
+	for _, mapping := range mappings {
+		cleanupErr = errors.Join(cleanupErr, a.stopOwnedForward(cleanupCtx, ssh, a.forwardControlPath(mapping)))
+	}
+	return cleanupErr
 }
 
 // proxy runs a Podman-compatible command on the VM through SSH.

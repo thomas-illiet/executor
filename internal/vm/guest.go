@@ -24,7 +24,7 @@ const GuestWorkDir = GuestHomeDir + "/workspace"
 const podmanConfigDir = GuestHomeDir + "/.config/containers"
 
 // ConfigurePodman writes rootless Podman configuration and verifies Podman in the VM.
-func (m Manager) ConfigurePodman(ctx context.Context, creds Credentials) error {
+func (m Manager) ConfigurePodman(ctx context.Context) error {
 	if err := m.SSH.RunNoTTY(ctx, "mkdir -p "+system.Single(podmanConfigDir)+" "+system.Single(m.Config.PodmanDataDir)); err != nil {
 		return err
 	}
@@ -36,14 +36,6 @@ func (m Manager) ConfigurePodman(ctx context.Context, creds Credentials) error {
 		return err
 	}
 	if err := m.writeRemoteFile(ctx, podmanConfigDir+"/registries.conf", m.registriesConf()); err != nil {
-		return err
-	}
-
-	authJSON, err := registryAuthJSON(creds)
-	if err != nil {
-		return err
-	}
-	if err := m.writeRemoteFile(ctx, PodmanAuthFile, authJSON); err != nil {
 		return err
 	}
 
@@ -91,23 +83,6 @@ func (m Manager) registriesConf() string {
 	out.WriteString(tomlString(registryLocation(m.Config.PodmanRegistryMirror)))
 	out.WriteByte('\n')
 	return out.String()
-}
-
-// registryAuthJSON renders Podman registry auth configuration from credentials.
-func registryAuthJSON(creds Credentials) (string, error) {
-	auth := creds.RegistryAuth()
-	authConfig := map[string]any{"auths": map[string]any{}}
-	if auth != "" {
-		authConfig["auths"] = map[string]any{
-			"docker.artifactory-dogen.group.echonet": map[string]string{"auth": auth},
-			"https://index.docker.io/v1/":            map[string]string{"auth": auth},
-		}
-	}
-	configJSON, err := json.Marshal(authConfig)
-	if err != nil {
-		return "", err
-	}
-	return string(configJSON), nil
 }
 
 // registryLocation normalizes a registry mirror URL into Podman location syntax.

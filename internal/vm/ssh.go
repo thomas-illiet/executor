@@ -37,6 +37,15 @@ func (c SSHClient) Shell(ctx context.Context) error {
 	return c.Runner.Run(ctx, "ssh", args...)
 }
 
+// ShellWithEnvironment opens an interactive login shell with explicit variables.
+func (c SSHClient) ShellWithEnvironment(ctx context.Context, environment []string) error {
+	command := append([]string{"env"}, environment...)
+	command = append(command, "/bin/sh", "-l")
+	args := c.baseArgs(true)
+	args = append(args, c.destination(), system.Join(command))
+	return c.Runner.Run(ctx, "ssh", args...)
+}
+
 // RunInDir executes a command in a remote directory with a TTY.
 func (c SSHClient) RunInDir(ctx context.Context, dir string, command []string) error {
 	return c.RunInDirWithTTY(ctx, dir, command, true)

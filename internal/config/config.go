@@ -53,7 +53,6 @@ type Config struct {
 	ConsoleLog           string
 	MemoryMiB            int
 	CPUs                 int
-	BootFile             string
 	WorkDir              string
 	CommandTimeout       time.Duration
 	BootTimeout          time.Duration
@@ -175,7 +174,6 @@ func loadFile(workDir, home, executorDir, configPath string) (Config, error) {
 		ConsoleLog:           filepath.Join(executorDir, "logs", "console.log"),
 		MemoryMiB:            reader.GetInt("qemu.memory_mib"),
 		CPUs:                 reader.GetInt("qemu.cpus"),
-		BootFile:             filepath.Join(home, ".boot"),
 		WorkDir:              workDir,
 		CommandTimeout:       commandTimeout,
 		BootTimeout:          bootTimeout,

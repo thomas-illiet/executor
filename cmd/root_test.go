@@ -150,8 +150,20 @@ func TestInternalTermOpensOneSSHShell(t *testing.T) {
 		t.Fatalf("internal term runs = %#v, want one SSH shell", runner.runs)
 	}
 	run := runner.runs[0]
-	if run.name != "ssh" || len(run.args) == 0 || run.args[len(run.args)-1] != "coder@localhost" {
+	if run.name != "ssh" || len(run.args) < 2 || run.args[len(run.args)-2] != "coder@localhost" {
 		t.Fatalf("internal term run = %#v, want an SSH shell for coder@localhost", run)
+	}
+	command := run.args[len(run.args)-1]
+	for _, fragment := range []string{
+		"'env'",
+		"'XDG_RUNTIME_DIR=/run/user/1000'",
+		"'REGISTRY_AUTH_FILE=/home/coder/.config/containers/auth.json'",
+		"'TMPDIR=/run/user/1000'",
+		"'/bin/sh' '-l'",
+	} {
+		if !strings.Contains(command, fragment) {
+			t.Fatalf("internal term command = %q, want %q", command, fragment)
+		}
 	}
 }
 

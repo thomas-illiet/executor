@@ -64,11 +64,7 @@ func (a App) Init(ctx context.Context, options InitOptions) error {
 		}
 	}
 	a.Config = updated
-	creds, err := vm.LoadCredentials(a.Config.BootFile)
-	if err != nil {
-		return err
-	}
-	return a.init(ctx, a.manager(), creds)
+	return a.init(ctx, a.manager())
 }
 
 // Boot starts QEMU without configuring Podman.
@@ -86,16 +82,12 @@ func (a App) Shutdown(ctx context.Context, options ShutdownOptions) error {
 
 // Reset removes Podman state and reinitializes the VM.
 func (a App) Reset(ctx context.Context, options ResetOptions) error {
-	creds, err := vm.LoadCredentials(a.Config.BootFile)
-	if err != nil {
-		return err
-	}
-	return a.reset(ctx, a.manager(), creds, options)
+	return a.reset(ctx, a.manager(), options)
 }
 
 // Term opens an SSH shell in the VM.
 func (a App) Term(ctx context.Context) error {
-	return a.manager().SSH.Shell(ctx)
+	return a.manager().SSH.ShellWithEnvironment(ctx, podmanEnvCommand()[1:])
 }
 
 // Console displays the VM serial console without accepting input.

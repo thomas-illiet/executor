@@ -13,7 +13,7 @@ import (
 var downloadVMAssets = vm.DownloadAssets
 
 // init prepares the VM assets, starts QEMU, and configures rootless Podman.
-func (a App) init(ctx context.Context, manager vm.Manager, creds vm.Credentials) error {
+func (a App) init(ctx context.Context, manager vm.Manager) error {
 	if err := a.ensureMemory(); err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func (a App) init(ctx context.Context, manager vm.Manager, creds vm.Credentials)
 		_ = manager.Stop(context.Background())
 		return err
 	}
-	if err := manager.ConfigurePodman(ctx, creds); err != nil {
+	if err := manager.ConfigurePodman(ctx); err != nil {
 		return err
 	}
 	fmt.Fprintln(a.Out, "Ready.")
@@ -49,7 +49,7 @@ func (a App) shutdown(ctx context.Context, manager vm.Manager, _ ShutdownOptions
 }
 
 // reset removes Podman state and reinitializes the VM.
-func (a App) reset(ctx context.Context, manager vm.Manager, creds vm.Credentials, options ResetOptions) error {
+func (a App) reset(ctx context.Context, manager vm.Manager, options ResetOptions) error {
 	if !options.Force && !a.confirm("Do you want to erase Podman state and restart (Y/N)? ") {
 		return nil
 	}
@@ -64,7 +64,7 @@ func (a App) reset(ctx context.Context, manager vm.Manager, creds vm.Credentials
 			return err
 		}
 	}
-	return a.init(ctx, manager, creds)
+	return a.init(ctx, manager)
 }
 
 // downloadVMAssets installs the configured remote archive into the executor directory.

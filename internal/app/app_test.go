@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -26,6 +27,16 @@ func TestContainerWantsTTY(t *testing.T) {
 		{name: "interactive run with short flags needs tty", args: []string{"run", "-it", "alpine", "sh"}, want: true},
 		{name: "exec with long tty flag needs tty", args: []string{"exec", "--tty", "container", "sh"}, want: true},
 		{name: "build tag is not a run tty", args: []string{"build", "-t", "image", "."}, want: false},
+		{name: "interactive login needs tty", args: []string{"login", "registry.example"}, want: true},
+		{name: "username-only login still needs tty", args: []string{"login", "--username", "alice", "registry.example"}, want: true},
+		{name: "password stdin login does not need tty", args: []string{"login", "--password-stdin", "registry.example"}, want: false},
+		{name: "password argument login does not need tty", args: []string{"login", "--password=secret", "registry.example"}, want: false},
+		{name: "secret login does not need tty", args: []string{"login", "--secret", "registry-credentials", "registry.example"}, want: false},
+		{name: "get login does not need tty", args: []string{"login", "--get-login", "registry.example"}, want: false},
+		{name: "attached compose up needs tty", args: []string{"compose", "up", "nginx"}, want: true},
+		{name: "attached up shorthand needs tty", args: []string{"up", "nginx"}, want: true},
+		{name: "detached compose up does not need tty", args: []string{"compose", "up", "-d", "nginx"}, want: false},
+		{name: "compose up help does not need tty", args: []string{"compose", "up", "--help"}, want: false},
 	}
 
 	for _, tt := range tests {
@@ -34,6 +45,34 @@ func TestContainerWantsTTY(t *testing.T) {
 				t.Fatalf("container.WantsTTY(%v) = %v, want %v", tt.args, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestProxyUsesTTYForInteractiveLogin verifies password prompts receive a remote PTY.
+func TestProxyUsesTTYForInteractiveLogin(t *testing.T) {
+	runner := &recordingRunner{}
+	app := App{Config: config.Config{HostShare: "none"}}
+	ssh := vm.SSHClient{SocketPath: "/tmp/executorssh.sock", User: "coder", Runner: runner}
+
+	if err := app.proxy(context.Background(), ssh, []string{"login", "registry.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.runs) != 1 || !recordedRunHasArg(runner.runs[0], "-t") {
+		t.Fatalf("interactive login runs = %#v, want SSH -t", runner.runs)
+	}
+}
+
+// TestProxyKeepsPasswordStdinLoginNonInteractive verifies piped credentials keep SSH -T.
+func TestProxyKeepsPasswordStdinLoginNonInteractive(t *testing.T) {
+	runner := &recordingRunner{}
+	app := App{Config: config.Config{HostShare: "none"}}
+	ssh := vm.SSHClient{SocketPath: "/tmp/executorssh.sock", User: "coder", Runner: runner}
+
+	if err := app.proxy(context.Background(), ssh, []string{"login", "--password-stdin", "registry.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.runs) != 1 || !recordedRunHasArg(runner.runs[0], "-T") {
+		t.Fatalf("password-stdin login runs = %#v, want SSH -T", runner.runs)
 	}
 }
 
@@ -227,7 +266,7 @@ func TestInitDownloadFailureDoesNotStartQEMU(t *testing.T) {
 		In:     strings.NewReader(""),
 	}
 
-	err := app.init(context.Background(), vm.NewManager(cfg, runner), vm.Credentials{})
+	err := app.init(context.Background(), vm.NewManager(cfg, runner))
 	if !errors.Is(err, downloadErr) {
 		t.Fatalf("init() error = %v, want download error", err)
 	}
@@ -274,7 +313,7 @@ func TestInitSkipsDownloadWhenAssetsExist(t *testing.T) {
 		In:     strings.NewReader(""),
 	}
 
-	err := app.init(context.Background(), vm.NewManager(cfg, runner), vm.Credentials{})
+	err := app.init(context.Background(), vm.NewManager(cfg, runner))
 	if err == nil || !strings.Contains(err.Error(), "QEMU Unix socket host forwarding probe did not write pidfile") {
 		t.Fatalf("init() error = %v, want QEMU probe error after asset reuse", err)
 	}
@@ -328,7 +367,7 @@ func TestResetDownloadsAssetsAndRemovesPodmanDisk(t *testing.T) {
 		In:     strings.NewReader(""),
 	}
 
-	err := app.reset(context.Background(), vm.NewManager(cfg, runner), vm.Credentials{}, ResetOptions{Force: true})
+	err := app.reset(context.Background(), vm.NewManager(cfg, runner), ResetOptions{Force: true})
 	if err == nil || !strings.Contains(err.Error(), "ssh socket path must be set") {
 		t.Fatalf("reset() error = %v, want QEMU start validation after asset download", err)
 	}
@@ -605,6 +644,70 @@ func TestOpenForwardStopsOwnedForwardBeforeReusingPort(t *testing.T) {
 	}
 }
 
+// TestComposeForwardLifecycle verifies attached up cleans forwards while detached up keeps them.
+func TestComposeForwardLifecycle(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		args     []string
+		wantStop bool
+	}{
+		{name: "attached", args: []string{"compose", "up", "web"}, wantStop: true},
+		{name: "detached", args: []string{"compose", "up", "-d", "web"}, wantStop: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			port := listener.Addr().(*net.TCPAddr).Port
+			if err := listener.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			dir := t.TempDir()
+			composePath := filepath.Join(dir, "compose.yaml")
+			content := fmt.Sprintf("services:\n  web:\n    image: nginx\n    ports:\n      - \"%d:80\"\n", port)
+			if err := os.WriteFile(composePath, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			app := App{
+				Config: config.Config{
+					HostShare: "none",
+					WorkDir:   dir,
+					SSHSocket: filepath.Join(dir, "executorssh.sock"),
+					SSHUser:   "coder",
+				},
+				Out: io.Discard,
+				Err: io.Discard,
+			}
+			mapping := container.Mapping{HostPort: port, ContainerPort: 80, Protocol: "tcp"}
+			controlPath := app.forwardControlPath(mapping)
+			runner := &forwardLifecycleRunner{controlPath: controlPath}
+			app.Runner = runner
+
+			if err := app.compose(context.Background(), vm.NewManager(app.Config, runner), tt.args); err != nil {
+				t.Fatal(err)
+			}
+			stopped := false
+			for _, run := range runner.runs {
+				if recordedRunHasArg(run, "-O") && recordedRunHasArg(run, "exit") {
+					stopped = true
+				}
+			}
+			if stopped != tt.wantStop {
+				t.Fatalf("runs = %#v, stopped = %v, want %v", runner.runs, stopped, tt.wantStop)
+			}
+			_, statErr := os.Lstat(controlPath)
+			if tt.wantStop && !os.IsNotExist(statErr) {
+				t.Fatalf("control socket stat error = %v, want removed", statErr)
+			}
+			if !tt.wantStop && statErr != nil {
+				t.Fatalf("control socket stat error = %v, want retained", statErr)
+			}
+		})
+	}
+}
+
 type recordedRun struct {
 	name string
 	args []string
@@ -647,6 +750,32 @@ func recordedRunIndexContaining(runs []recordedRun, fragment string) int {
 
 type recordingRunner struct {
 	runs []recordedRun
+}
+
+type forwardLifecycleRunner struct {
+	controlPath string
+	runs        []recordedRun
+}
+
+func (r *forwardLifecycleRunner) Run(_ context.Context, name string, args ...string) error {
+	r.runs = append(r.runs, recordedRun{name: name, args: append([]string(nil), args...)})
+	if name == "sh" {
+		return os.WriteFile(r.controlPath, []byte("owned"), 0o600)
+	}
+	return nil
+}
+
+func (r *forwardLifecycleRunner) Output(_ context.Context, _ string, _ ...string) ([]byte, error) {
+	return []byte("0\n"), nil
+}
+
+func recordedRunHasArg(run recordedRun, value string) bool {
+	for _, arg := range run.args {
+		if arg == value {
+			return true
+		}
+	}
+	return false
 }
 
 // Run records a local command invocation for assertions.
